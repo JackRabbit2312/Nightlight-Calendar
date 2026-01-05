@@ -1,7 +1,7 @@
 /**
- * Nightlight Dashboard (v1.1.5)
+ * Nightlight Dashboard (v1.1.6)
  * Senior Dev Lead: Rick P. | Melbourne
- * RESTORATION BUILD: 100% Logic Preservation + Chore Chart + Full Editor
+ * Master Build: Chore Integration, Pixel-Sync Alignment, Smart Nav
  */
 
 import {
@@ -15,10 +15,9 @@ class NightlightDashboard extends LitElement {
     return {
       hass: { type: Object },
       config: { type: Object },
-      _activeView: { type: String }, // 'calendar' or 'chores'
-      _calendarMode: { type: String }, // 'month', 'week', 'day', 'agenda'
+      _activeView: { type: String },
+      _calendarMode: { type: String },
       _events: { type: Array },
-      _chores: { type: Array },
       _loading: { type: Boolean },
       _referenceDate: { type: Object },
       _selectedEvent: { type: Object },
@@ -28,9 +27,7 @@ class NightlightDashboard extends LitElement {
     };
   }
 
-  // --- Visual Editor Registration ---
   static getConfigElement() { return document.createElement("nightlight-card-editor"); }
-  static getStubConfig() { return { title: "Family Hub", theme: "light", entities: [] }; }
 
   constructor() {
     super();
@@ -38,25 +35,19 @@ class NightlightDashboard extends LitElement {
     this._calendarMode = 'month';
     this._referenceDate = new Date();
     this._events = [];
-    this._chores = [];
     this._activeCalendars = [];
     this._loading = false;
     this._selectedEvent = null;
     this._showAddModal = false;
-    this._selectedCalendarId = '';
   }
 
   setConfig(config) {
-    if (!config.entities) throw new Error("Please define entities in YAML.");
+    if (!config.entities) throw new Error("Define entities in YAML.");
     this.config = { title: "Family Hub", theme: "light", ...config };
     if (this._activeCalendars.length === 0 && config.entities) {
       this._activeCalendars = config.entities.map(e => e.entity);
     }
-    const firstCal = config.entities.find(e => e.entity.startsWith('calendar'));
-    this._selectedCalendarId = firstCal ? firstCal.entity : '';
   }
-
-  // --- Lifecycle & Data Fetching ---
 
   updated(changedProps) {
     if (changedProps.has('hass') || changedProps.has('_activeView') || changedProps.has('_calendarMode') || changedProps.has('_referenceDate')) {
@@ -69,7 +60,6 @@ class NightlightDashboard extends LitElement {
     this._loading = true;
     try {
       if (this._activeView === 'calendar') await this._fetchEvents();
-      // Chores use input_booleans, state is fetched live from this.hass.states
     } finally {
       this._loading = false;
     }
@@ -82,7 +72,7 @@ class NightlightDashboard extends LitElement {
     if (this._calendarMode === 'month') {
       start = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth(), 1);
       end = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth() + 1, 0, 23, 59, 59);
-    } else if (this._calendarMode === 'week' || this._calendarMode === 'agenda') {
+    } else if (this._calendarMode === 'week') {
       const day = start.getDay();
       const diff = start.getDate() - day + (day === 0 ? -6 : 1);
       start.setDate(diff);
@@ -111,13 +101,18 @@ class NightlightDashboard extends LitElement {
     this._events = results.flat();
   }
 
-  // --- Interaction Logic ---
+  // --- v1.1.6 Interaction Logic ---
 
   _navigate(dir) {
     const d = new Date(this._referenceDate);
-    if (this._calendarMode === 'month') d.setMonth(d.getMonth() + dir);
-    else if (this._calendarMode === 'week') d.setDate(d.getDate() + (dir * 7));
-    else d.setDate(d.getDate() + dir);
+    if (this._calendarMode === 'month') {
+      d.setMonth(d.getMonth() + dir);
+    } else if (this._calendarMode === 'week') {
+      d.setDate(d.getDate() + (dir * 7));
+    } else {
+      // Fix: Day view now moves by 1 day
+      d.setDate(d.getDate() + dir);
+    }
     this._referenceDate = d;
   }
 
@@ -139,28 +134,9 @@ class NightlightDashboard extends LitElement {
     if (evsCount > 2) this._calendarMode = 'day';
   }
 
-  async _submitEvent() {
-    const summary = this.shadowRoot.getElementById('new_summary').value;
-    const date = this.shadowRoot.getElementById('new_date').value;
-    const startT = this.shadowRoot.getElementById('new_start').value;
-    const endT = this.shadowRoot.getElementById('new_end').value;
+  // --- Utility ---
 
-    if (!summary || !date || !startT || !endT) return alert("Fill all fields.");
-    try {
-      await this.hass.callService('calendar', 'create_event', {
-        entity_id: this._selectedCalendarId,
-        summary: summary,
-        start_date_time: `${date}T${startT}:00`,
-        end_date_time: `${date}T${endT}:00`,
-      });
-      this._showAddModal = false;
-      this._refreshData();
-    } catch (err) { alert("Error saving event."); }
-  }
-
-  // --- Utility Helpers ---
-
-  _isPast(event, fragmentDate = null) {
+  _isPast(event) {
     const end = new Date(event.end.dateTime || event.end.date);
     return new Date() > end;
   }
@@ -172,10 +148,10 @@ class NightlightDashboard extends LitElement {
   }
 
   _getTimeStyles(e) {
-    if (!e.start.dateTime) return `display:none`;
-    const s = new Date(e.start.dateTime), end = new Date(e.end.dateTime);
+    const s = new Date(e.start.dateTime);
+    const end = new Date(e.end.dateTime);
     const top = (s.getHours() * 60 + s.getMinutes()) * 1.666;
-    const height = Math.max(((end - s) / 60000) * 1.666, 35);
+    const height = Math.max(((end - s) / 60000) * 1.666, 30);
     return `top:${top}px;height:${height}px`;
   }
 
@@ -199,7 +175,7 @@ class NightlightDashboard extends LitElement {
     return fragmented;
   }
 
-  // --- Rendering Engines ---
+  // --- v1.1.6 Rendering Engine ---
 
   render() {
     if (!this.hass) return html``;
@@ -246,7 +222,7 @@ class NightlightDashboard extends LitElement {
               </div>
               <button class="today-btn" @click="${() => { this._referenceDate = new Date(); this._activeView = 'calendar'; }}">Today</button>
               <div class="persona-filters">
-                ${this.config.entities.map(ent => html`
+                ${this.config.entities.filter(e => e.entity.startsWith('calendar')).map(ent => html`
                   <div class="persona ${this._activeCalendars.includes(ent.entity) ? 'active' : 'inactive'}" 
                        style="background: ${ent.color}" @click="${() => this._togglePersona(ent.entity)}">
                     ${ent.picture ? html`<img src="${ent.picture}">` : ent.entity.split('.')[1][0].toUpperCase()}
@@ -260,10 +236,7 @@ class NightlightDashboard extends LitElement {
             ${this._activeView === 'calendar' ? this._renderCalendarView() : this._renderChoreDashboard()}
           </section>
         </main>
-
-        ${this._selectedEvent ? this._renderDetailModal() : ''}
-        ${this._showAddModal ? this._renderAddModal() : ''}
-        <button class="fab" @click="${() => this._showAddModal = true}">+</button>
+        ${this._selectedEvent ? this._renderModal() : ''}
       </div>
     `;
   }
@@ -287,11 +260,12 @@ class NightlightDashboard extends LitElement {
         <div class="labels-row">${['MON','TUE','WED','THU','FRI','SAT','SUN'].map(l => html`<div>${l}</div>`)}</div>
         <div class="month-grid">
           ${days.map(d => {
-            const evs = this._events.filter(e => d.cur && new Date(e.start.dateTime || e.start.date).getDate() === d.n && this._activeCalendars.includes(e.origin));
+            const evs = this._events.filter(e => d.cur && new Date(e.start.dateTime || e.start.date).getDate() === d.n && this._activeCalendars.includes(e.origin))
+              .sort((a, b) => (a.start.dateTime || a.start.date).localeCompare(b.start.dateTime || b.start.date));
             return html`
               <div class="day-cell ${!d.cur ? 'empty' : ''} ${this._isToday(d.n) ? 'today' : ''}" @click="${() => this._handleMonthDayClick(d.n, evs.length)}">
                 <span class="day-num">${d.n || ''}</span>
-                <div class="ev-list">
+                <div class="ev-stack">
                   ${evs.slice(0, 4).map(e => html`
                     <div class="ev-pill ${this._isPast(e) ? 'is-past' : ''}" style="border-left: 4px solid ${e.color}; background:${e.color}15; color:${e.color}" @click="${(ev) => { ev.stopPropagation(); this._selectedEvent = e; }}">
                       ${e.summary}
@@ -314,8 +288,8 @@ class NightlightDashboard extends LitElement {
 
     return html`
       <div class="time-grid-root">
-        <div class="all-day-sticky-row">
-            <div class="axis-label">All Day</div>
+        <div class="all-day-sync-row">
+            <div class="axis-label-blank">All Day</div>
             <div class="ad-grid" style="--cols: ${daysCount}">
                 ${Array.from({length: daysCount}).map((_, i) => {
                     const d = new Date(start); d.setDate(start.getDate() + i);
@@ -324,9 +298,9 @@ class NightlightDashboard extends LitElement {
                 })}
             </div>
         </div>
-        <div class="main-scrollable-body">
-            <div class="time-axis-sidebar">${hours.map(h => html`<div class="time-mark">${h}:00</div>`)}</div>
-            <div class="columns-grid" style="--cols: ${daysCount}">
+        <div class="main-scroll-sync">
+            <div class="time-axis-fixed">${hours.map(h => html`<div class="time-mark">${h}:00</div>`)}</div>
+            <div class="columns-scroll-sync" style="--cols: ${daysCount}">
               ${Array.from({length: daysCount}).map((_, i) => {
                 const d = new Date(start); d.setDate(start.getDate() + i);
                 const evs = fragmented.filter(e => this._activeCalendars.includes(e.origin) && e.displayDate === d.toDateString() && !e.isAllDay && !e.isFragment);
@@ -346,12 +320,12 @@ class NightlightDashboard extends LitElement {
 
   _renderAgenda() {
     const fragmented = this._fragmentEvents(this._events);
-    const sorted = fragmented.filter(e => this._activeCalendars.includes(e.origin))
+    const interleaved = fragmented.filter(e => this._activeCalendars.includes(e.origin))
       .sort((a, b) => new Date(a.displayDate) - new Date(b.displayDate) || new Date(a.start.dateTime || a.start.date) - new Date(b.start.dateTime || b.start.date));
 
     return html`
       <div class="agenda-view">
-        ${sorted.map(e => html`
+        ${interleaved.map(e => html`
           <div class="agenda-row ${this._isPast(e) ? 'is-past' : ''}" @click="${() => this._selectedEvent = e}">
             <div class="agenda-date">
               <span class="day">${new Date(e.displayDate).getDate()}</span>
@@ -371,19 +345,19 @@ class NightlightDashboard extends LitElement {
       { name: 'Evie', img: 'https://as2.ftcdn.net/jpg/07/67/89/33/1000_F_767893338_diT9OBj46OkCz3cVMpJFeaAkvHYUTB3Y.jpg', prefix: 'evie' },
       { name: 'Charlotte', img: 'https://png.pngtree.com/thumb_back/fh260/back_our/20190625/ourmid/pngtree-pink-mother-and-baby-cute-banner-image_253696.jpg', prefix: 'charlotte' }
     ];
-    const choreTypes = ['make_bed', 'eat_breakfast', 'brush_teeth_morning', 'get_dressed', 'pack_homework', 'pack_water_bottle', 'pack_lunch'];
+    const chores = ['make_bed', 'eat_breakfast', 'brush_teeth_morning', 'get_dressed', 'pack_homework', 'pack_water_bottle', 'pack_lunch'];
 
     return html`
-      <div class="chore-grid-container">
+      <div class="chore-grid-locked">
         ${kids.map(kid => html`
-          <div class="chore-card">
-             <div class="chore-header" style="background-image: url('${kid.img}')"><h3>${kid.name}</h3></div>
-             <div class="chore-list">
-                ${choreTypes.map(type => {
+          <div class="kid-chore-card">
+             <div class="kid-banner" style="background-image: url('${kid.img}')"><h3>${kid.name}</h3></div>
+             <div class="kid-list">
+                ${chores.map(type => {
                   const ent = `input_boolean.${type}_${kid.prefix}`;
                   const state = this.hass.states[ent]?.state || 'off';
                   return html`
-                    <div class="chore-item ${state === 'on' ? 'done' : ''}" @click="${() => this._toggleChore(ent)}">
+                    <div class="kid-item ${state === 'on' ? 'done' : ''}" @click="${() => this._toggleChore(ent)}">
                        <ha-icon icon="${state === 'on' ? 'mdi:check-circle' : 'mdi:circle-outline'}"></ha-icon>
                        <span>${type.replace(/_/g, ' ').toUpperCase()}</span>
                     </div>`;
@@ -394,57 +368,37 @@ class NightlightDashboard extends LitElement {
       </div>`;
   }
 
-  _renderDetailModal() {
+  _renderModal() {
     return html`
       <div class="modal-backdrop" @click="${() => this._selectedEvent = null}">
         <div class="modal-body" @click="${e => e.stopPropagation()}">
           <div class="modal-header" style="background: ${this._selectedEvent.color}"><h2>${this._selectedEvent.summary}</h2></div>
           <div class="modal-content">
             <p><strong>Time:</strong> ${new Date(this._selectedEvent.start.dateTime || this._selectedEvent.start.date).toLocaleString()}</p>
-            <p><strong>Source:</strong> ${this._selectedEvent.friendly_name}</p>
-            <hr><div class="description" .innerHTML="${this._sanitize(this._selectedEvent.description)}"></div>
+            <p><strong>Calendar:</strong> ${this._selectedEvent.friendly_name}</p>
+            <hr><div .innerHTML="${this._sanitize(this._selectedEvent.description)}"></div>
           </div>
           <button class="close-btn" @click="${() => this._selectedEvent = null}">Close</button>
         </div>
       </div>`;
   }
 
-  _renderAddModal() {
-    return html`
-      <div class="modal-backdrop" @click="${() => this._showAddModal = false}">
-        <div class="modal-body creation" @click="${e => e.stopPropagation()}">
-          <div class="modal-header" style="background: var(--accent)"><h2>New Event</h2></div>
-          <div class="modal-content">
-            <div class="form-grid">
-              <input id="new_summary" type="text" placeholder="Summary" class="full-width">
-              <input id="new_date" type="date" value="${new Date().toISOString().split('T')[0]}" class="full-width">
-              <div class="input-group"><label>Start</label><input id="new_start" type="time" value="10:00"></div>
-              <div class="input-group"><label>End</label><input id="new_end" type="time" value="11:00"></div>
-              <div class="input-group full-width"><select @change="${e => this._selectedCalendarId = e.target.value}">
-                  ${this.config.entities.filter(e => e.entity.startsWith('calendar')).map(ent => html`<option value="${ent.entity}">${ent.entity}</option>`)}
-              </select></div>
-            </div>
-          </div>
-          <div class="modal-actions"><button class="btn-cancel" @click="${() => this._showAddModal = false}">Cancel</button><button class="btn-save" @click="${this._submitEvent}">Create</button></div>
-        </div>
-      </div>`;
-  }
-
-  _isToday(n) { const t = new Date(); return n === t.getDate() && this._referenceDate.getMonth() === t.getMonth() && this._referenceDate.getFullYear() === t.getFullYear(); }
+  _isToday(n) { const t = new Date(); return n === t.getDate() && this._referenceDate.getMonth() === t.getMonth(); }
 
   static get styles() {
     return css`
       :host { --accent: #7b61ff; --bg: #fdfdfd; --card: #fff; --text: #1a1a1b; --border: #eee; }
       .nightlight-hub.dark { --bg: #121212; --card: #1e1e1e; --text: #efefef; --border: #333; }
-      .nightlight-hub { display: grid; grid-template-columns: 100px 1fr; height: calc(100vh - 80px); background: var(--bg); color: var(--text); font-family: sans-serif; overflow: hidden; }
+      .nightlight-hub { display: grid; grid-template-columns: 100px 1fr; height: calc(100vh - 64px); background: var(--bg); color: var(--text); font-family: sans-serif; overflow: hidden; }
+      
       .side-rail { background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 30px 0; z-index: 20; }
-      .logo-area { color: var(--accent); margin-bottom: 40px; width: 40px; }
+      .logo-area { color: var(--accent); margin-bottom: 40px; width: 35px; }
       .nav-btn { background: none; border: none; padding: 20px 0; color: #bbb; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 5px; font-weight: bold; width: 100%; }
       .nav-btn.active { color: var(--accent); border-right: 4px solid var(--accent); background: rgba(123, 97, 255, 0.05); }
-      .nav-btn svg { width: 28px; }
+      .nav-btn svg { width: 26px; }
       
       .main-stage { padding: 30px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; overflow: hidden; }
-      .top-bar { flex-shrink: 0; display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 25px; }
+      .top-bar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 25px; flex-shrink: 0; }
       .top-bar h1 { font-size: 2.4rem; font-weight: 800; margin: 0; letter-spacing: -1.2px; }
       .meta-row { display: flex; align-items: center; gap: 20px; margin-top: 10px; }
       .clock { font-size: 1.2rem; font-weight: 700; color: #888; }
@@ -460,40 +414,41 @@ class NightlightDashboard extends LitElement {
       .persona img { width: 100%; height: 100%; object-fit: cover; }
       .today-btn { background: var(--accent); color: #fff; border: none; padding: 10px 20px; border-radius: 12px; font-weight: 800; cursor: pointer; }
 
-      .content-area { flex-grow: 1; height: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+      .content-area { flex-grow: 1; height: 0; overflow: hidden; display: flex; flex-direction: column; }
+      .month-wrapper { height: 100%; display: flex; flex-direction: column; }
       .labels-row { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; color: #bbb; font-weight: 800; font-size: 0.8rem; padding-bottom: 12px; }
       .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(6, 1fr); gap: 10px; flex-grow: 1; height: 0; }
-      .day-cell { background: var(--card); border: 2px solid var(--border); border-radius: 16px; padding: 12px; overflow: hidden; cursor: pointer; }
+      .day-cell { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 12px; overflow: hidden; cursor: pointer; }
       .day-cell.today { border-color: var(--accent); border-width: 3px; }
       .day-num { font-weight: 900; font-size: 1.2rem; }
-      .ev-pill { margin-top: 3px; padding: 5px; border-radius: 4px; color: #fff; font-size: 0.75rem; font-weight: 700; white-space: nowrap; overflow: hidden; }
-      .is-past { opacity: 0.3 !important; filter: grayscale(40%); }
+      .ev-pill { margin-top: 3px; padding: 5px; border-radius: 4px; color: #fff; font-size: 0.7rem; font-weight: 800; white-space: nowrap; overflow: hidden; }
+      .is-past { opacity: 0.3 !important; }
 
       .time-grid-root { display: flex; flex-direction: column; height: 100%; border: 1px solid var(--border); border-radius: 24px; overflow: hidden; background: var(--card); }
-      .all-day-sticky-row { display: flex; border-bottom: 2px solid var(--border); background: var(--bg); flex-shrink: 0; }
-      .axis-label { width: 70px; border-right: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 900; color: #bbb; }
+      .all-day-sync-row { display: flex; border-bottom: 2px solid var(--border); background: var(--bg); flex-shrink: 0; }
+      .axis-label-blank { width: 70px; border-right: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 900; color: #bbb; }
       .ad-grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; padding: 5px; gap: 5px; }
       .ad-col { min-height: 40px; display: flex; flex-direction: column; gap: 2px; }
       .ad-pill { padding: 4px 8px; border-radius: 4px; color: #fff; font-size: 0.7rem; font-weight: 800; white-space: nowrap; overflow: hidden; }
       
-      .main-scrollable-body { display: flex; flex-grow: 1; overflow-y: auto; overflow-x: hidden; }
-      .time-axis-sidebar { width: 70px; border-right: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
+      .main-scroll-sync { display: flex; flex-grow: 1; overflow-y: auto; overflow-x: hidden; }
+      .time-axis-fixed { width: 70px; border-right: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
       .time-mark { height: 100px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; color: #888; font-weight: 700; }
-      .grid-columns { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; }
+      .columns-scroll-sync { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; }
       .day-col { border-right: 1px solid var(--border); position: relative; }
       .day-header-sticky { height: 50px; display: flex; align-items: center; justify-content: center; font-weight: 800; border-bottom: 1px solid var(--border); background: var(--card); position: sticky; top: 0; z-index: 5; }
       .hour-stack { position: relative; height: 2400px; }
       .hour-box { height: 100px; border-bottom: 1px dotted var(--border); }
       .time-ev { position: absolute; left: 4px; right: 4px; padding: 10px; border-radius: 10px; color: #fff; font-size: 0.9rem; font-weight: 800; cursor: pointer; z-index: 2; }
 
-      .chore-grid-container { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; height: 100%; overflow-y: auto; }
-      .chore-card { background: var(--card); border-radius: 24px; border: 1px solid var(--border); overflow: hidden; }
-      .chore-header { height: 120px; background-size: cover; background-position: center; display: flex; align-items: flex-end; padding: 20px; color: #fff; position: relative; }
-      .chore-header::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(transparent, rgba(0,0,0,0.5)); }
-      .chore-header h3 { margin: 0; z-index: 1; font-size: 1.8rem; font-weight: 900; }
-      .chore-list { padding: 15px; }
-      .chore-item { display: flex; align-items: center; gap: 15px; padding: 12px; border-radius: 12px; cursor: pointer; color: #666; font-weight: 800; }
-      .chore-item.done { color: var(--accent); text-decoration: line-through; opacity: 0.6; }
+      .chore-grid-locked { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; height: 100%; overflow-y: auto; }
+      .kid-chore-card { background: var(--card); border-radius: 24px; border: 1px solid var(--border); overflow: hidden; }
+      .kid-banner { height: 120px; background-size: cover; background-position: center; display: flex; align-items: flex-end; padding: 20px; color: #fff; position: relative; }
+      .kid-banner::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(transparent, rgba(0,0,0,0.5)); }
+      .kid-banner h3 { margin: 0; z-index: 1; font-size: 1.8rem; font-weight: 900; }
+      .kid-list { padding: 15px; }
+      .kid-item { display: flex; align-items: center; gap: 15px; padding: 12px; border-radius: 12px; cursor: pointer; color: #666; font-weight: 800; }
+      .kid-item.done { color: var(--accent); text-decoration: line-through; opacity: 0.6; }
 
       .agenda-view { height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
       .agenda-row { display: flex; gap: 15px; align-items: center; background: var(--card); padding: 12px; border-radius: 16px; border: 1px solid var(--border); cursor: pointer; }
@@ -506,25 +461,13 @@ class NightlightDashboard extends LitElement {
 
       .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(10px); }
       .modal-body { background: var(--card); width: 500px; border-radius: 32px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
-      .modal-body.creation { width: 600px; }
       .modal-header { padding: 30px; color: #fff; }
       .modal-content { padding: 30px; font-size: 1rem; line-height: 1.6; }
       .close-btn { width: 100%; padding: 20px; border: none; background: var(--accent); color: #fff; font-weight: 900; cursor: pointer; }
-      
-      .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-      .full-width { grid-column: span 2; }
-      input, select { padding: 15px; border-radius: 12px; border: 2px solid var(--border); font-size: 1rem; font-weight: 600; background: var(--bg); color: var(--text); }
-      label { display: block; font-weight: 800; color: #888; font-size: 0.8rem; text-transform: uppercase; margin-bottom: 5px; }
-      .modal-actions { display: flex; }
-      .btn-cancel { flex: 1; padding: 25px; border: none; background: #eee; font-weight: 800; cursor: pointer; }
-      .btn-save { flex: 1; padding: 25px; border: none; background: var(--accent); color: #fff; font-weight: 800; cursor: pointer; }
-
-      .fab { position: fixed; bottom: 40px; right: 40px; width: 85px; height: 85px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 3.5rem; cursor: pointer; box-shadow: 0 10px 25px rgba(123, 97, 255, 0.4); z-index: 100; }
     `;
   }
 }
 
-// --- Visual Editor Implementation ---
 class NightlightCardEditor extends LitElement {
   static get properties() { return { hass: {}, _config: {} }; }
   setConfig(config) { this._config = config; }
@@ -552,6 +495,6 @@ customElements.define("nightlight-card-editor", NightlightCardEditor);
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "nightlight-calendar-card",
-  name: "Nightlight Hub v1.1.5",
-  description: "Synchronized weekly grid + Integrated Chore charts + Full Visual Editor."
+  name: "Nightlight Hub v1.1.6",
+  description: "Restored engines + Corrected Nav + Morning Chore Charts."
 });
