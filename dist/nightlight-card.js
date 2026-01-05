@@ -1,8 +1,7 @@
 /**
- * Nightlight Custom Calendar Card
- * Senior Dev Lead: Rick P. | Melbourne Branch
- * Features: Month, Week, Day, Agenda, Multi-Calendar Toggles
- * Target: FHD HP Touch Panel (Kiosk Mode)
+ * Nightlight Dashboard (v0.3.3)
+ * Author: Rick P. | Melbourne Branch
+ * Feature: Advanced Visual Editor & Entity Personas
  */
 
 import {
@@ -11,226 +10,146 @@ import {
   css,
 } from "https://unpkg.com/lit-element@2.4.0/lit-element.js?module";
 
-class NightlightCalendarCard extends LitElement {
+// --- MAIN DASHBOARD CLASS ---
+class NightlightDashboard extends LitElement {
   static get properties() {
     return {
       hass: { type: Object },
       config: { type: Object },
-      _activeCalendars: { type: Array },
-      _view: { type: String },
-      _referenceDate: { type: Object },
+      _activeView: { type: String },
       _events: { type: Array },
-      _loading: { type: Boolean }
+      _chores: { type: Array },
+      _loading: { type: Boolean },
+      _referenceDate: { type: Object },
+      _showAddModal: { type: Boolean }
     };
   }
+
+  static getConfigElement() { return document.createElement("nightlight-card-editor"); }
+  static getStubConfig() { return { title: "Nightlight Hub", theme: "light", entities: [] }; }
 
   constructor() {
     super();
-    this._activeCalendars = [];
-    this._view = 'month';
+    this._activeView = 'calendar';
     this._referenceDate = new Date();
     this._events = [];
-    this._loading = false;
+    this._chores = [];
+    this._showAddModal = false;
   }
 
-  // --- Core Lifecycle ---
-
   setConfig(config) {
-    if (!config.entities) throw new Error("Please define calendar entities.");
     this.config = {
-      title: 'Family Schedule',
-      first_day: 'monday',
+      title: "Family Hub",
+      theme: "light",
       ...config
     };
-    this._activeCalendars = this.config.entities.map(e => e.entity || e);
   }
 
   updated(changedProps) {
-    if (changedProps.has('_referenceDate') || changedProps.has('_view')) {
-      this._fetchEvents();
+    if (changedProps.has('hass') || changedProps.has('_activeView')) {
+      this._refreshData();
     }
   }
 
-  // --- Data Fetching Engine ---
-
-  async _fetchEvents() {
+  async _refreshData() {
     if (!this.hass) return;
     this._loading = true;
-
-    // Calculate start/end range based on current view
-    let start = new Date(this._referenceDate);
-    let end = new Date(this._referenceDate);
-
-    if (this._view === 'month') {
-      start = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth(), 1);
-      end = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth() + 1, 0, 23, 59, 59);
-    } else if (this._view === 'week') {
-      const day = start.getDay();
-      const diff = start.getDate() - day + (day === 0 ? -6 : 1);
-      start.setDate(diff);
-      start.setHours(0,0,0,0);
-      end = new Date(start);
-      end.setDate(start.getDate() + 7);
-    } else {
-      start.setHours(0,0,0,0);
-      end.setHours(23,59,59,999);
-    }
-
     try {
-      const fetchPromises = this.config.entities.map(ent => {
-        const id = ent.entity || ent;
-        return this.hass.callApi('GET', `calendars/${id}?start=${start.toISOString()}&end=${end.toISOString()}`)
-          .then(evs => evs.map(e => ({
-            ...e,
-            originEntity: id,
-            color: ent.color || '#3498db'
-          })))
-          .catch(() => []);
-      });
-
-      const results = await Promise.all(fetchPromises);
-      this._events = results.flat();
+      if (this._activeView === 'calendar') await this._fetchEvents();
+      if (this._activeView === 'chores') await this._fetchChores();
     } finally {
       this._loading = false;
     }
   }
 
-  // --- Event Handling & Navigation ---
-
-  _navigate(dir) {
-    const d = new Date(this._referenceDate);
-    if (this._view === 'month') d.setMonth(d.getMonth() + dir);
-    else if (this._view === 'week') d.setDate(d.getDate() + (dir * 7));
-    else d.setDate(d.getDate() + dir);
-    this._referenceDate = d;
+  async _fetchEvents() {
+    const start = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth(), 1).toISOString();
+    const end = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth() + 1, 0).toISOString();
+    const promises = this.config.entities.filter(e => e.entity.startsWith('calendar')).map(ent => {
+      return this.hass.callApi('GET', `calendars/${ent.entity}?start=${start}&end=${end}`)
+        .then(evs => evs.map(e => ({ ...e, color: ent.color, origin: ent.entity })));
+    });
+    const results = await Promise.all(promises);
+    this._events = results.flat();
   }
-
-  _toggleCalendar(id) {
-    if (this._activeCalendars.includes(id)) {
-      this._activeCalendars = this._activeCalendars.filter(item => item !== id);
-    } else {
-      this._activeCalendars = [...this._activeCalendars, id];
-    }
-  }
-
-  _getTimeStyles(event) {
-    if (!event.start.dateTime) return `display:none;`;
-    const start = new Date(event.start.dateTime);
-    const end = new Date(event.end.dateTime);
-    const top = ((start.getHours() * 60 + start.getMinutes()) / 14.4);
-    const height = Math.max(((end - start) / 60000) / 14.4, 2); // Min 2% height
-    return `top: ${top}%; height: ${height}%;`;
-  }
-
-  // --- Rendering ---
 
   render() {
-    if (!this.hass || !this.config) return html``;
+    if (!this.hass) return html``;
 
     return html`
-      <ha-card>
-        <div class="header">
-          <div class="nav-group">
-            <h1 class="title">${this._referenceDate.toLocaleString('default', { month: 'long', year: 'numeric' })}</h1>
-            <div class="nav-controls">
-              <button class="icon-btn" @click="${() => this._navigate(-1)}">←</button>
-              <button class="icon-btn" @click="${() => this._navigate(1)}">→</button>
-            </div>
+      <div class="nightlight-hub ${this.config.theme || 'light'}">
+        <nav class="side-rail">
+          <div class="logo">N</div>
+          <div class="nav-items">
+            <button class="nav-btn ${this._activeView === 'calendar' ? 'active' : ''}" @click="${() => this._activeView = 'calendar'}">
+                <ha-icon icon="mdi:calendar-month"></ha-icon>
+                <span>Calendar</span>
+            </button>
+            <button class="nav-btn ${this._activeView === 'chores' ? 'active' : ''}" @click="${() => this._activeView = 'chores'}">
+                <ha-icon icon="mdi:checkbox-marked-circle-outline"></ha-icon>
+                <span>Chores</span>
+            </button>
           </div>
-          <div class="view-toggles">
-            ${['month', 'week', 'day', 'agenda'].map(v => html`
-              <button class="${this._view === v ? 'active' : ''}" @click="${() => this._view = v}">${v}</button>
-            `)}
-          </div>
-        </div>
+        </nav>
 
-        <div class="content">
-          ${this._renderCurrentView()}
-        </div>
-
-        <div class="filters">
-          ${this.config.entities.map(ent => {
-            const id = ent.entity || ent;
-            const active = this._activeCalendars.includes(id);
-            return html`
-              <button class="filter-chip ${active ? 'active' : ''}" 
-                      style="--chip-color: ${ent.color}" 
-                      @click="${() => this._toggleCalendar(id)}">
-                ${this.hass.states[id]?.attributes.friendly_name || id}
-              </button>
-            `;
-          })}
-        </div>
-      </ha-card>
-    `;
-  }
-
-  _renderCurrentView() {
-    if (this._view === 'month') return this._renderMonth();
-    if (this._view === 'agenda') return this._renderAgenda();
-    return this._renderTimeGrid(this._view === 'week' ? 7 : 1);
-  }
-
-  _renderMonth() {
-    const start = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth(), 1);
-    const end = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth() + 1, 0);
-    const firstDay = (start.getDay() + (this.config.first_day === 'monday' ? 6 : 0)) % 7;
-    const days = [];
-    for (let i = 0; i < firstDay; i++) days.push({ num: null, current: false });
-    for (let i = 1; i <= end.getDate(); i++) days.push({ num: i, current: true });
-
-    return html`
-      <div class="month-grid">
-        ${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(l => html`<div class="label">${l}</div>`)}
-        ${days.map(d => {
-          const evs = this._events.filter(e => {
-            const date = new Date(e.start.dateTime || e.start.date);
-            return d.current && date.getDate() === d.num && this._activeCalendars.includes(e.originEntity);
-          });
-          return html`
-            <div class="day-cell ${d.current ? '' : 'empty'}">
-              <span class="day-num">${d.num}</span>
-              <div class="day-events">
-                ${evs.slice(0, 3).map(e => html`<div class="ev-pill" style="background:${e.color}">${e.summary}</div>`)}
-              </div>
+        <main class="main-stage">
+          <header class="top-bar">
+            <div class="info">
+                <h1>${this.config.title}</h1>
+                <span class="clock">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
             </div>
-          `;
-        })}
+            
+            <div class="profile-strip">
+                ${this.config.entities.map(ent => html`
+                    <div class="persona-circle" style="background: ${ent.color || '#eee'}" title="${ent.entity}">
+                        ${ent.picture ? html`<img src="${ent.picture}">` : 
+                          (ent.icon ? html`<ha-icon icon="${ent.icon}"></ha-icon>` : ent.entity.split('.')[1][0].toUpperCase())}
+                    </div>
+                `)}
+            </div>
+          </header>
+
+          <section class="content">
+            ${this._activeView === 'calendar' ? this._renderCalendar() : html`<div>Chores View</div>`}
+          </section>
+        </main>
+
+        <button class="fab" @click="${() => this._showAddModal = true}">+</button>
       </div>
     `;
   }
 
-  _renderTimeGrid(daysCount) {
-    const hours = Array.from({length: 24}, (_, i) => i);
-    const start = new Date(this._referenceDate);
-    if (daysCount === 7) {
-      const day = start.getDay();
-      start.setDate(start.getDate() - day + (day === 0 ? -6 : 1));
-    }
+// --- v0.3.4 CALENDAR ENGINE ---
+  _renderCalendar() {
+    const start = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth(), 1);
+    const end = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth() + 1, 0);
+    
+    // Calculate leading days for Monday start
+    const firstDay = (start.getDay() + 6) % 7;
+    const days = [];
+    for (let i = 0; i < firstDay; i++) days.push({ n: null, current: false });
+    for (let i = 1; i <= end.getDate(); i++) days.push({ n: i, current: true });
 
     return html`
-      <div class="time-grid" style="--cols: ${daysCount}">
-        <div class="time-sidebar">
-          ${hours.map(h => html`<div class="time-mark">${h}:00</div>`)}
+      <div class="calendar-container">
+        <div class="week-labels">
+          ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => html`<div>${d}</div>`)}
         </div>
-        <div class="grid-body">
-          ${Array.from({length: daysCount}).map((_, i) => {
-            const dayDate = new Date(start);
-            dayDate.setDate(start.getDate() + i);
+        <div class="month-grid">
+          ${days.map(d => {
             const dayEvents = this._events.filter(e => {
-              const d = new Date(e.start.dateTime || e.start.date);
-              return d.getDate() === dayDate.getDate() && this._activeCalendars.includes(e.originEntity);
-            });
+              const date = new Date(e.start.dateTime || e.start.date);
+              return d.current && date.getDate() === d.n;
+            }).sort((a, b) => (a.start.dateTime || a.start.date).localeCompare(b.start.dateTime || b.start.date));
+
             return html`
-              <div class="day-col">
-                <div class="col-head">${dayDate.toLocaleDateString('default', {weekday: 'short', day: 'numeric'})}</div>
-                <div class="hour-container">
-                  ${hours.map(() => html`<div class="hour-box"></div>`)}
-                  ${dayEvents.map(e => html`
-                    <div class="time-ev" style="${this._getTimeStyles(e)} background: ${e.color}">
-                      ${e.summary}
-                    </div>
-                  `)}
+              <div class="day-cell ${!d.current ? 'empty' : ''} ${this._isToday(d.n) ? 'today' : ''}">
+                <div class="cell-header">
+                   <span class="day-number">${d.n}</span>
+                </div>
+                <div class="event-stack">
+                  ${dayEvents.slice(0, 4).map(e => this._renderEventPill(e))}
+                  ${dayEvents.length > 4 ? html`<div class="more-indicator">+${dayEvents.length - 4} more</div>` : ''}
                 </div>
               </div>
             `;
@@ -240,50 +159,182 @@ class NightlightCalendarCard extends LitElement {
     `;
   }
 
-  _renderAgenda() {
-    const evs = this._events.filter(e => this._activeCalendars.includes(e.originEntity));
+  _renderEventPill(e) {
+    const isAllDay = !e.start.dateTime;
+    const time = isAllDay ? '' : new Date(e.start.dateTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    
+    // Find the entity config to get the icon/picture
+    const entConfig = this.config.entities.find(ent => ent.entity === e.origin);
+
     return html`
-      <div class="agenda">
-        ${evs.map(e => html`
-          <div class="agenda-item" style="border-left: 8px solid ${e.color}">
-            <strong>${new Date(e.start.dateTime || e.start.date).toLocaleDateString()}</strong>: ${e.summary}
+      <div class="ev-pill" style="background: ${e.color}15; border-left: 4px solid ${e.color}; color: ${e.color}" @click="${() => this._selectedEvent = e}">
+        <div class="ev-content">
+          ${entConfig?.picture ? html`<img class="ev-avatar" src="${entConfig.picture}">` : ''}
+          <span class="ev-summary">${e.summary}</span>
+        </div>
+        ${time ? html`<span class="ev-time">${time}</span>` : ''}
+      </div>
+    `;
+  }
+
+  // --- v0.3.4 CHORE ENGINE ---
+  _renderChores() {
+    const active = this._chores.filter(c => c.status !== 'completed');
+    const completed = this._chores.filter(c => c.status === 'completed');
+
+    return html`
+      <div class="chores-grid">
+        <div class="chore-col">
+          <h2 class="col-title">To Do <span class="badge">${active.length}</span></h2>
+          <div class="chore-list">
+            ${active.map(item => this._renderChoreRow(item))}
           </div>
-        `)}
+        </div>
+        <div class="chore-col">
+          <h2 class="col-title">Completed</h2>
+          <div class="chore-list done">
+            ${completed.map(item => this._renderChoreRow(item))}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  _renderChoreRow(item) {
+    const isDone = item.status === 'completed';
+    return html`
+      <div class="chore-row ${isDone ? 'is-done' : ''}" @click="${() => this._toggleChore(item)}">
+        <div class="check-btn" style="border-color: ${item.color}; background: ${isDone ? item.color : 'transparent'}">
+          ${isDone ? html`✓` : ''}
+        </div>
+        <div class="chore-text">
+          <div class="chore-main">${item.summary}</div>
+          <div class="chore-sub">${item.list_id.split('.')[1].replace('_', ' ')}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  _isToday(n) {
+    const today = new Date();
+    return n === today.getDate() && 
+           this._referenceDate.getMonth() === today.getMonth() && 
+           this._referenceDate.getFullYear() === today.getFullYear();
+  }
+
+  static get styles() {
+    return css`
+      :host { --accent: #7b61ff; }
+      .nightlight-hub.light { --bg: #fdfdfd; --card: #fff; --text: #1a1a1b; --border: #eee; }
+      .nightlight-hub.dark { --bg: #121212; --card: #1e1e1e; --text: #efefef; --border: #333; }
+      
+      .nightlight-hub { display: grid; grid-template-columns: 120px 1fr; height: 100vh; background: var(--bg); color: var(--text); font-family: sans-serif; }
+      .side-rail { background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 40px 0; }
+      
+      .nav-btn { background: none; border: none; padding: 20px 0; color: #888; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; font-weight: bold; width: 100%; }
+      .nav-btn.active { color: var(--accent); border-right: 4px solid var(--accent); background: rgba(123, 97, 255, 0.05); }
+
+      .main-stage { padding: 40px; }
+      .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; }
+      .clock { font-size: 1.2rem; color: #888; }
+      
+      .profile-strip { display: flex; gap: 10px; }
+      .persona-circle { width: 45px; height: 45px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; border: 2px solid var(--card); }
+      .persona-circle img { width: 100%; height: 100%; object-fit: cover; }
+      
+      /* v0.3.4 Calendar Styles */
+      .calendar-container { display: flex; flex-direction: column; height: 100%; }
+      .week-labels { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-weight: 800; color: #bbb; padding-bottom: 15px; text-transform: uppercase; font-size: 0.8rem; }
+      .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; flex-grow: 1; }
+      .day-cell { background: var(--card); border: 2px solid var(--border); border-radius: 20px; padding: 12px; min-height: 140px; position: relative; }
+      .day-cell.today { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+      .day-cell.empty { opacity: 0.3; border-style: dashed; }
+      .day-number { font-weight: 900; font-size: 1.2rem; margin-bottom: 8px; display: block; }
+      
+      .event-stack { display: flex; flex-direction: column; gap: 6px; }
+      .ev-pill { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border-radius: 8px; cursor: pointer; transition: 0.2s; }
+      .ev-pill:active { transform: scale(0.97); }
+      .ev-content { display: flex; align-items: center; gap: 6px; overflow: hidden; }
+      .ev-avatar { width: 18px; height: 18px; border-radius: 50%; object-fit: cover; }
+      .ev-summary { font-size: 0.8rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .ev-time { font-size: 0.65rem; font-weight: 800; opacity: 0.7; }
+      .more-indicator { font-size: 0.7rem; font-weight: 800; color: #999; padding-left: 5px; }
+
+      /* v0.3.4 Chore Styles */
+      .chores-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+      .col-title { font-size: 1rem; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 25px; display: flex; align-items: center; gap: 10px; }
+      .badge { background: #eee; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; color: #666; }
+      .chore-row { display: flex; align-items: center; gap: 20px; background: var(--card); padding: 20px; border-radius: 20px; margin-bottom: 12px; border: 2px solid var(--border); cursor: pointer; transition: 0.2s; }
+      .check-btn { width: 28px; height: 28px; border: 3px solid #eee; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 900; }
+      .chore-main { font-size: 1.2rem; font-weight: 700; }
+      .chore-sub { font-size: 0.75rem; color: #aaa; text-transform: uppercase; font-weight: 800; }
+      .chore-row.is-done { opacity: 0.5; }
+      .chore-row.is-done .chore-main { text-decoration: line-through; }
+      
+      .fab { position: fixed; bottom: 30px; right: 30px; width: 70px; height: 70px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 2.5rem; cursor: pointer; box-shadow: 0 10px 20px rgba(123, 97, 255, 0.3); }
+    `;
+  }
+}
+
+// --- VISUAL EDITOR ENGINE ---
+class NightlightCardEditor extends LitElement {
+  static get properties() { return { hass: {}, _config: {} }; }
+
+  setConfig(config) { this._config = config; }
+
+  _valueChanged(ev) {
+    if (!this._config || !this.hass) return;
+    const target = ev.target;
+    const value = target.value;
+    const field = target.configValue;
+
+    if (this._config[field] === value) return;
+
+    const newConfig = { ...this._config, [field]: value };
+    const event = new CustomEvent("config-changed", {
+      detail: { config: newConfig },
+      bubbles: true,
+      composed: true,
+    });
+    this.dispatchEvent(event);
+  }
+
+  render() {
+    if (!this.hass || !this._config) return html``;
+
+    return html`
+      <div class="schema-editor">
+        <ha-textfield label="Dashboard Title" .value="${this._config.title}" .configValue="${'title'}" @input="${this._valueChanged}"></ha-textfield>
+        
+        <ha-select label="Theme" .value="${this._config.theme}" .configValue="${'theme'}" @selected="${this._valueChanged}">
+            <mwc-list-item value="light">Skylight Light</mwc-list-item>
+            <mwc-list-item value="dark">Nightlight Dark</mwc-list-item>
+        </ha-select>
+
+        <div class="entity-section">
+            <h3>Entities & Personas</h3>
+            <p>Edit colors, icons, and pictures in YAML for precise mapping. Visual entity picker coming soon.</p>
+        </div>
       </div>
     `;
   }
 
   static get styles() {
     return css`
-      :host { --accent: #0071e3; --bg: #ffffff; --text: #1d1d1f; }
-      ha-card { padding: 30px; border-radius: 24px; color: var(--text); background: var(--bg); font-family: sans-serif; }
-      .header { display: flex; justify-content: space-between; margin-bottom: 30px; align-items: flex-end; }
-      .title { font-size: 2.5rem; margin: 0; font-weight: 800; letter-spacing: -1px; }
-      .icon-btn { border: none; background: #f5f5f7; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; font-size: 1.2rem; }
-      .view-toggles { display: flex; background: #f5f5f7; padding: 4px; border-radius: 12px; }
-      .view-toggles button { border: none; background: transparent; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600; text-transform: capitalize; }
-      .view-toggles button.active { background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-      
-      .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
-      .label { text-align: center; font-weight: 700; color: #86868b; font-size: 0.8rem; text-transform: uppercase; }
-      .day-cell { border: 1px solid #e5e5e7; min-height: 120px; border-radius: 12px; padding: 10px; }
-      .day-num { font-weight: 800; font-size: 1.1rem; }
-      .ev-pill { font-size: 0.7rem; color: #fff; padding: 2px 6px; border-radius: 4px; margin-top: 2px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600; }
-
-      .time-grid { display: flex; height: 600px; overflow-y: auto; border: 1px solid #e5e5e7; border-radius: 16px; }
-      .time-sidebar { width: 50px; flex-shrink: 0; padding-top: 40px; border-right: 1px solid #e5e5e7; }
-      .time-mark { height: 60px; font-size: 0.7rem; color: #86868b; text-align: center; }
-      .grid-body { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; }
-      .day-col { border-right: 1px solid #f5f5f7; position: relative; }
-      .col-head { height: 40px; line-height: 40px; text-align: center; font-weight: 800; background: #fafafa; font-size: 0.8rem; }
-      .hour-container { position: relative; height: 1440px; }
-      .hour-box { height: 60px; border-bottom: 1px solid #f5f5f7; }
-      .time-ev { position: absolute; left: 2px; right: 2px; border-radius: 4px; color: #fff; font-size: 0.7rem; padding: 4px; font-weight: 700; overflow: hidden; }
-
-      .filters { display: flex; gap: 10px; margin-top: 30px; flex-wrap: wrap; }
-      .filter-chip { padding: 8px 16px; border-radius: 20px; border: 2px solid #e5e5e7; background: transparent; cursor: pointer; font-weight: 700; }
-      .filter-chip.active { border-color: var(--chip-color); background: #f5f5f7; }
+      .schema-editor { display: flex; flex-direction: column; gap: 15px; padding: 10px; }
+      ha-textfield, ha-select { width: 100%; }
+      h3 { margin-bottom: 5px; }
+      p { color: #888; font-size: 0.9rem; }
     `;
   }
 }
-customElements.define("nightlight-calendar-card", NightlightCalendarCard);
+
+customElements.define("nightlight-calendar-card", NightlightDashboard);
+customElements.define("nightlight-card-editor", NightlightCardEditor);
+
+window.customCards = window.customCards || [];
+window.customCards.push({
+  type: "nightlight-calendar-card",
+  name: "Nightlight Ultimate Hub",
+  description: "Advanced family dashboard with personas and multi-view support."
+});
