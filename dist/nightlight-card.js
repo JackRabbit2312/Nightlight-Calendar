@@ -95,17 +95,26 @@ class NightlightDashboard extends LitElement {
         <main class="main-stage">
           <header class="top-bar">
             <div class="info">
-                <h1>${this.config.title}</h1>
-                <span class="clock">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                <h1>${this._activeView === 'calendar' ? this.config.title : 'Chore Tracker'}</h1>
+                <div class="sub-header">
+                  <span class="clock">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                  <div class="meal-plan" @click="${() => this._activeView = 'chores'}">
+                    <ha-icon icon="mdi:silverware-fork-knife"></ha-icon>
+                    <span>Dinner: ${this.hass.states[this.config.meal_entity]?.state || 'Plan a meal'}</span>
+                  </div>
+                </div>
             </div>
             
-            <div class="profile-strip">
-                ${this.config.entities.map(ent => html`
-                    <div class="persona-circle" style="background: ${ent.color || '#eee'}" title="${ent.entity}">
-                        ${ent.picture ? html`<img src="${ent.picture}">` : 
-                          (ent.icon ? html`<ha-icon icon="${ent.icon}"></ha-icon>` : ent.entity.split('.')[1][0].toUpperCase())}
-                    </div>
-                `)}
+            <div class="nav-actions">
+                <button class="today-btn" @click="${() => this._referenceDate = new Date()}">Today</button>
+                <div class="profile-strip">
+                    ${this.config.entities.slice(0, 5).map(ent => html`
+                        <div class="persona-circle" style="background: ${ent.color || '#eee'}">
+                            ${ent.picture ? html`<img src="${ent.picture}">` : 
+                              (ent.icon ? html`<ha-icon icon="${ent.icon}"></ha-icon>` : ent.entity.split('.')[1][0].toUpperCase())}
+                        </div>
+                    `)}
+                </div>
             </div>
           </header>
 
@@ -154,6 +163,63 @@ class NightlightDashboard extends LitElement {
               </div>
             `;
           })}
+        </div>
+      </div>
+    `;
+  }
+  
+  _renderDayView() {
+    const dayDate = new Date(this._referenceDate);
+    const dayString = dayDate.toDateString();
+    
+    // Use the fragmentation engine from v0.3.6
+    const displayEvents = this._fragmentEvents(this._events, dayDate, dayDate);
+    
+    const allDayEvs = displayEvents.filter(e => e.isAllDay && (new Date(e.start.date || e.start.dateTime).toDateString() === dayString || e.displayDate === dayString));
+    const timedEvs = displayEvents.filter(e => !e.isAllDay && new Date(e.start.dateTime).toDateString() === dayString);
+
+    const now = new Date();
+    const isToday = dayString === now.toDateString();
+    const nowPosition = ((now.getHours() * 60 + now.getMinutes()) / 14.4);
+
+    return html`
+      <div class="day-view-container">
+        <div class="day-all-day-strip">
+          ${allDayEvs.map(e => html`
+            <div class="all-day-block" style="background: ${e.color}">
+              <ha-icon icon="mdi:calendar-check"></ha-icon>
+              <span>${e.summary}</span>
+            </div>
+          `)}
+        </div>
+
+        <div class="day-timeline-wrapper">
+          <div class="time-axis">
+            ${Array.from({length: 24}, (_, i) => html`<div class="hour-mark">${i}:00</div>`)}
+          </div>
+          <div class="event-stage">
+            ${isToday ? html`<div class="now-indicator" style="top: ${nowPosition}%"></div>` : ''}
+            ${Array.from({length: 24}).map(() => html`<div class="slot-row"></div>`)}
+            
+            ${timedEvs.map(e => {
+              const ent = this.config.entities.find(ent => ent.entity === e.origin);
+              return html`
+                <div class="detailed-ev" style="${this._getTimeStyles(e)} border-left: 8px solid ${e.color}; background: ${e.color}15" @click="${() => this._selectedEvent = e}">
+                  <div class="ev-header">
+                    <span class="ev-time-range">
+                       ${new Date(e.start.dateTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - 
+                       ${new Date(e.end.dateTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                    </span>
+                    ${ent?.picture ? html`<img class="persona-mini" src="${ent.picture}">` : ''}
+                  </div>
+                  <div class="ev-body">
+                    <div class="ev-summary-large">${e.summary}</div>
+                    <div class="ev-desc-preview">${this._sanitize(e.description || e.location || '')}</div>
+                  </div>
+                </div>
+              `;
+            })}
+          </div>
         </div>
       </div>
     `;
@@ -221,6 +287,85 @@ class NightlightDashboard extends LitElement {
            this._referenceDate.getMonth() === today.getMonth() && 
            this._referenceDate.getFullYear() === today.getFullYear();
   }
+  
+  _fragmentEvents(events, startRange, endRange) {
+    const fragmented = [];
+    events.forEach(event => {
+      const start = new Date(event.start.dateTime || event.start.date);
+      const end = new Date(event.end.dateTime || event.end.date);
+
+      // Check if event spans more than one day
+      if (start.toDateString() === end.toDateString()) {
+        fragmented.push(event);
+      } else {
+        let current = new Date(start);
+        while (current <= end && current <= endRange) {
+          if (current >= startRange) {
+            fragmented.push({
+              ...event,
+              isFragment: true,
+              displayDate: new Date(current).toDateString(),
+              // Force all-day behavior for fragments
+              isAllDay: true 
+            });
+          }
+          current.setDate(current.getDate() + 1);
+        }
+      }
+    });
+    return fragmented;
+  }
+  
+  _renderTimeGrid(daysCount) {
+    const start = new Date(this._referenceDate);
+    if (daysCount === 7) {
+      const day = start.getDay();
+      start.setDate(start.getDate() - day + (day === 0 ? -6 : 1));
+    }
+    
+    // Get Fragmented Events for the visible week
+    const endRange = new Date(start);
+    endRange.setDate(start.getDate() + daysCount);
+    const displayEvents = this._fragmentEvents(this._events, start, endRange);
+
+    return html`
+      <div class="time-grid-wrapper">
+        <div class="time-sidebar">
+          <div class="all-day-label">All Day</div>
+          ${Array.from({length: 24}, (_, i) => html`<div class="time-mark">${i}:00</div>`)}
+        </div>
+        <div class="grid-scroll-area" style="--cols: ${daysCount}">
+          ${Array.from({length: daysCount}).map((_, i) => {
+            const dayDate = new Date(start);
+            dayDate.setDate(start.getDate() + i);
+            const dayString = dayDate.toDateString();
+            
+            const allDayEvs = displayEvents.filter(e => e.isAllDay && (new Date(e.start.date || e.start.dateTime).toDateString() === dayString || e.displayDate === dayString));
+            const timedEvs = displayEvents.filter(e => !e.isAllDay && new Date(e.start.dateTime).toDateString() === dayString);
+
+            return html`
+              <div class="day-column">
+                <div class="col-head">${dayDate.toLocaleDateString('default', {weekday: 'short', day: 'numeric'})}</div>
+                <div class="all-day-slot">
+                  ${allDayEvs.map(e => html`
+                    <div class="all-day-pill" style="background: ${e.color}">${e.summary}</div>
+                  `)}
+                </div>
+                <div class="hour-container">
+                  ${Array.from({length: 24}).map(() => html`<div class="hour-box"></div>`)}
+                  ${timedEvs.map(e => html`
+                    <div class="time-ev" style="${this._getTimeStyles(e)} background: ${e.color}CC">
+                      ${e.summary}
+                    </div>
+                  `)}
+                </div>
+              </div>
+            `;
+          })}
+        </div>
+      </div>
+    `;
+  }
 
   static get styles() {
     return css`
@@ -270,6 +415,56 @@ class NightlightDashboard extends LitElement {
       .chore-sub { font-size: 0.75rem; color: #aaa; text-transform: uppercase; font-weight: 800; }
       .chore-row.is-done { opacity: 0.5; }
       .chore-row.is-done .chore-main { text-decoration: line-through; }
+      
+      .sub-header { display: flex; align-items: center; gap: 30px; margin-top: 5px; }
+      .meal-plan { 
+        display: flex; align-items: center; gap: 10px; background: #fff2e6; 
+        color: #ff9500; padding: 8px 20px; border-radius: 12px; 
+        font-weight: 800; font-size: 0.9rem; cursor: pointer; border: 1px solid #ffe0cc;
+      }
+      .meal-plan ha-icon { --mdc-icon-size: 20px; }
+      
+      .nav-actions { display: flex; align-items: center; gap: 25px; }
+      .today-btn { 
+        background: var(--accent); color: #fff; border: none; 
+        padding: 10px 20px; border-radius: 12px; font-weight: 800; 
+        cursor: pointer; transition: 0.2s; 
+      }
+      .today-btn:active { transform: scale(0.95); }
+      
+      .time-grid-wrapper { display: flex; height: 75vh; border-radius: 24px; overflow: hidden; border: 1px solid var(--border); }
+      .grid-scroll-area { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; overflow-y: auto; }
+      
+      .all-day-label { height: 80px; font-size: 0.7rem; font-weight: 800; color: #bbb; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid var(--border); }
+      .all-day-slot { min-height: 80px; background: #fcfcfc; border-bottom: 2px solid var(--border); padding: 5px; display: flex; flex-direction: column; gap: 4px; }
+      .all-day-pill { padding: 4px 10px; border-radius: 6px; color: #fff; font-size: 0.7rem; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      
+      .hour-container { position: relative; height: 1440px; }
+      .day-column { border-right: 1px solid var(--border); }
+      
+      .day-view-container { display: flex; flex-direction: column; height: 78vh; gap: 10px; }
+      .day-all-day-strip { display: flex; flex-wrap: wrap; gap: 10px; padding: 10px 0; border-bottom: 2px solid var(--border); }
+      .all-day-block { padding: 12px 20px; border-radius: 14px; color: #fff; font-weight: 800; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+      
+      .day-timeline-wrapper { display: flex; flex-grow: 1; overflow-y: auto; background: var(--card); border-radius: 24px; position: relative; }
+      .time-axis { width: 80px; padding-top: 40px; border-right: 1px solid var(--border); flex-shrink: 0; }
+      .hour-mark { height: 80px; text-align: center; color: #bbb; font-weight: 800; font-size: 0.8rem; }
+      
+      .event-stage { flex-grow: 1; position: relative; height: 1920px; } /* Scaled for detail */
+      .slot-row { height: 80px; border-bottom: 1px solid #f9f9f9; }
+      
+      .now-indicator { position: absolute; left: 0; right: 0; height: 3px; background: #ff3b30; z-index: 50; }
+      .now-indicator::before { content: ''; position: absolute; left: -5px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: #ff3b30; }
+
+      .detailed-ev { position: absolute; left: 15px; right: 15px; border-radius: 16px; padding: 20px; cursor: pointer; display: flex; flex-direction: column; gap: 10px; transition: 0.2s; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+      .detailed-ev:active { transform: scale(0.99); }
+      
+      .ev-header { display: flex; justify-content: space-between; align-items: center; }
+      .ev-time-range { font-weight: 800; color: #888; font-size: 0.9rem; }
+      .persona-mini { width: 30px; height: 30px; border-radius: 50%; border: 2px solid #fff; }
+      
+      .ev-summary-large { font-size: 1.6rem; font-weight: 900; color: var(--text); }
+      .ev-desc-preview { font-size: 1rem; color: #666; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80%; }
       
       .fab { position: fixed; bottom: 30px; right: 30px; width: 70px; height: 70px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 2.5rem; cursor: pointer; box-shadow: 0 10px 20px rgba(123, 97, 255, 0.3); }
     `;
