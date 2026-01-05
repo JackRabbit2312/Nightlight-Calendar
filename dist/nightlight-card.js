@@ -1,7 +1,7 @@
 /**
- * Nightlight Dashboard (v1.1.1)
+ * Nightlight Dashboard (v1.1.3)
  * Senior Dev Lead: Rick P. | Melbourne
- * Features: Interleaved Agenda Sort, Event Creation, Temporal Dulling, Multi-Day Logic
+ * UNABRIDGED MASTER: Month, Week, Day, Agenda, Event Creation, & Visual Editor
  */
 
 import {
@@ -15,14 +15,15 @@ class NightlightDashboard extends LitElement {
     return {
       hass: { type: Object },
       config: { type: Object },
-      _calendarMode: { type: String },
-      _activeCalendars: { type: Array },
+      _activeView: { type: String },
+      _calendarMode: { type: String }, // month, week, day, agenda
       _events: { type: Array },
       _chores: { type: Array },
       _loading: { type: Boolean },
       _referenceDate: { type: Object },
-      _selectedEvent: { type: Object },
       _showAddModal: { type: Boolean },
+      _selectedEvent: { type: Object },
+      _activeCalendars: { type: Array },
       _selectedCalendarId: { type: String }
     };
   }
@@ -32,14 +33,14 @@ class NightlightDashboard extends LitElement {
 
   constructor() {
     super();
+    this._activeView = 'calendar';
     this._calendarMode = 'month';
     this._referenceDate = new Date();
-    this._activeCalendars = [];
     this._events = [];
     this._chores = [];
-    this._loading = false;
-    this._selectedEvent = null;
+    this._activeCalendars = [];
     this._showAddModal = false;
+    this._selectedEvent = null;
     this._selectedCalendarId = '';
   }
 
@@ -53,8 +54,10 @@ class NightlightDashboard extends LitElement {
     this._selectedCalendarId = firstCal ? firstCal.entity : '';
   }
 
+  // --- Data & Lifecycle ---
+
   updated(changedProps) {
-    if (changedProps.has('hass') || changedProps.has('_activeView') || changedProps.has('_calendarMode') || changedProps.has('_referenceDate')) {
+    if (changedProps.has('hass') || changedProps.has('_calendarMode') || changedProps.has('_referenceDate')) {
       this._refreshData();
     }
   }
@@ -64,6 +67,7 @@ class NightlightDashboard extends LitElement {
     this._loading = true;
     try {
       await this._fetchEvents();
+      if (this._activeView === 'chores') await this._fetchChores();
     } finally {
       this._loading = false;
     }
@@ -102,30 +106,23 @@ class NightlightDashboard extends LitElement {
     this._events = results.flat();
   }
 
-  async _submitEvent() {
-    const summary = this.shadowRoot.getElementById('new_summary').value;
-    const date = this.shadowRoot.getElementById('new_date').value;
-    const startT = this.shadowRoot.getElementById('new_start').value;
-    const endT = this.shadowRoot.getElementById('new_end').value;
-
-    if (!summary || !date || !startT || !endT) {
-      alert("Please fill all fields.");
-      return;
+  async _fetchChores() {
+    const todoEntities = this.config.entities.filter(e => e.entity.startsWith('todo'));
+    const chores = [];
+    for (const ent of todoEntities) {
+      try {
+        const state = this.hass.states[ent.entity];
+        if (state) {
+          const items = await this.hass.callService('todo', 'get_items', { entity_id: ent.entity }, null, true);
+          const listItems = items[ent.entity]?.items || [];
+          chores.push(...listItems.map(item => ({ ...item, list_id: ent.entity, color: ent.color })));
+        }
+      } catch (e) { console.error("Chore fetch failed", e); }
     }
-
-    try {
-      await this.hass.callService('calendar', 'create_event', {
-        entity_id: this._selectedCalendarId,
-        summary: summary,
-        start_date_time: `${date}T${startT}:00`,
-        end_date_time: `${date}T${endT}:00`,
-      });
-      this._showAddModal = false;
-      this._refreshData();
-    } catch (err) {
-      alert("Failed to save event. Check HASS logs.");
-    }
+    this._chores = chores;
   }
+
+  // --- Interaction Logic ---
 
   _navigate(dir) {
     const d = new Date(this._referenceDate);
@@ -139,20 +136,46 @@ class NightlightDashboard extends LitElement {
       this._activeCalendars.filter(i => i !== id) : [...this._activeCalendars, id];
   }
 
-  _isPast(event) {
+  _isPast(event, fragmentDate = null) {
+    const checkDate = fragmentDate ? new Date(fragmentDate) : new Date();
     const end = new Date(event.end.dateTime || event.end.date);
     return new Date() > end;
   }
 
-  _sanitize(text) {
-    const div = document.createElement('div');
-    div.textContent = text || 'No details provided.';
-    return div.innerHTML;
+  _handleMonthDayClick(dayNum, evsCount) {
+    if (!dayNum) return;
+    const newDate = new Date(this._referenceDate);
+    newDate.setDate(dayNum);
+    this._referenceDate = newDate;
+    if (evsCount > 2) this._calendarMode = 'day';
   }
+
+  async _submitEvent() {
+    const summary = this.shadowRoot.getElementById('new_summary').value;
+    const date = this.shadowRoot.getElementById('new_date').value;
+    const startT = this.shadowRoot.getElementById('new_start').value;
+    const endT = this.shadowRoot.getElementById('new_end').value;
+
+    if (!summary || !date || !startT || !endT) return alert("Fill all fields.");
+    try {
+      await this.hass.callService('calendar', 'create_event', {
+        entity_id: this._selectedCalendarId,
+        summary: summary,
+        start_date_time: `${date}T${startT}:00`,
+        end_date_time: `${date}T${endT}:00`,
+      });
+      this._showAddModal = false;
+      this._refreshData();
+    } catch (err) { alert("Error saving event."); }
+  }
+
+  // --- Rendering Engines ---
 
   render() {
     if (!this.hass) return html``;
-    const headerTitle = this._referenceDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+    const headerTitle = this._calendarMode === 'month' 
+        ? this._referenceDate.toLocaleString('default', { month: 'long', year: 'numeric' })
+        : this.config.title;
 
     return html`
       <div class="nightlight-hub ${this.config.theme}">
@@ -161,11 +184,11 @@ class NightlightDashboard extends LitElement {
              <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12,3L2,12H5V20H19V12H22L12,3M12,8.5C13.5,8.5 15,10 15,11.5C15,13.2 12,16 12,16C12,16 9,13.2 9,11.5C9,10 10.5,8.5 12,8.5Z"/></svg>
           </div>
           <div class="nav-items">
-            <button class="nav-btn active">
+            <button class="nav-btn ${this._activeView === 'calendar' ? 'active' : ''}" @click="${() => this._activeView = 'calendar'}">
                <svg viewBox="0 0 24 24"><path fill="currentColor" d="M19,19H5V8H19M16,1V3H8V1H6V3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3H18V1M17,12H12V17H17V12Z"/></svg>
                <span>Calendar</span>
             </button>
-            <button class="nav-btn" @click="${() => alert('Chores Engine planned for v1.2')}">
+            <button class="nav-btn ${this._activeView === 'chores' ? 'active' : ''}" @click="${() => this._activeView = 'chores'}">
                <svg viewBox="0 0 24 24"><path fill="currentColor" d="M9,20.42L2.79,14.21L5.62,11.38L9,14.77L18.88,4.88L21.71,7.71L9,20.42Z"/></svg>
                <span>Chores</span>
             </button>
@@ -178,6 +201,10 @@ class NightlightDashboard extends LitElement {
               <h1>${headerTitle}</h1>
               <div class="meta-row">
                 <span class="clock">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                <div class="meal-tag" @click="${() => { this._calendarMode = 'day'; this._referenceDate = new Date(); }}">
+                  <ha-icon icon="mdi:silverware-fork-knife"></ha-icon>
+                  <span>Dinner: ${this.hass.states[this.config.meal_entity]?.state || 'Plan a meal'}</span>
+                </div>
                 <div class="nav-arrows">
                   <button @click="${() => this._navigate(-1)}">❮</button>
                   <button @click="${() => this._navigate(1)}">❯</button>
@@ -204,26 +231,25 @@ class NightlightDashboard extends LitElement {
           </header>
 
           <section class="content-area">
-            ${this._renderCalendarView()}
+            ${this._renderMainStage()}
           </section>
         </main>
 
         ${this._selectedEvent ? this._renderDetailModal() : ''}
         ${this._showAddModal ? this._renderAddModal() : ''}
-        
         <button class="fab" @click="${() => this._showAddModal = true}">+</button>
       </div>
     `;
   }
 
-  _renderCalendarView() {
-    if (this._calendarMode === 'month') return this._renderCalendar();
+  _renderMainStage() {
+    if (this._activeView === 'chores') return this._renderChores();
+    if (this._calendarMode === 'month') return this._renderMonthGrid();
     if (this._calendarMode === 'agenda') return this._renderAgenda();
-    if (this._calendarMode === 'day') return this._renderDayView();
-    return this._renderTimeGrid(7);
+    return this._renderTimeGrid(this._calendarMode === 'week' ? 7 : 1);
   }
 
-  _renderCalendar() {
+  _renderMonthGrid() {
     const start = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth(), 1);
     const end = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth() + 1, 0);
     const firstDay = (start.getDay() + 6) % 7;
@@ -232,139 +258,104 @@ class NightlightDashboard extends LitElement {
     for (let i = 1; i <= end.getDate(); i++) days.push({ n: i, cur: true });
 
     return html`
-      <div class="calendar-container">
-        <div class="week-labels">${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => html`<div>${d}</div>`)}</div>
+      <div class="month-wrapper">
+        <div class="labels-row">${['MON','TUE','WED','THU','FRI','SAT','SUN'].map(l => html`<div>${l}</div>`)}</div>
         <div class="month-grid">
           ${days.map(d => {
-            const dayEvents = this._events.filter(e => d.cur && new Date(e.start.dateTime || e.start.date).getDate() === d.n && this._activeCalendars.includes(e.origin))
-              .sort((a, b) => (a.start.dateTime || a.start.date).localeCompare(b.start.dateTime || b.start.date));
+            const evs = this._events.filter(e => d.cur && new Date(e.start.dateTime || e.start.date).getDate() === d.n && this._activeCalendars.includes(e.origin));
             return html`
-              <div class="day-cell ${!d.cur ? 'empty' : ''} ${this._isToday(d.n) ? 'today' : ''}" @click="${() => { if(d.n) {this._referenceDate.setDate(d.n); this._calendarMode = 'day';}}}">
-                <span class="day-number">${d.n || ''}</span>
-                <div class="event-stack">
-                  ${dayEvents.map(e => this._renderEventPill(e))}
+              <div class="day-cell ${!d.cur ? 'empty' : ''} ${this._isToday(d.n) ? 'today' : ''}" @click="${() => this._handleMonthDayClick(d.n, evs.length)}">
+                <span class="day-num">${d.n}</span>
+                <div class="ev-list">
+                  ${evs.slice(0, 4).map(e => html`
+                    <div class="ev-pill ${this._isPast(e) ? 'is-past' : ''}" style="border-left: 4px solid ${e.color}; background:${e.color}15; color:${e.color}" @click="${(ev) => { ev.stopPropagation(); this._selectedEvent = e; }}">
+                      ${e.summary}
+                    </div>`)}
                 </div>
               </div>`;
           })}
-        </div>
-      </div>`;
-  }
-
-  _renderDayView() {
-    const d = new Date(this._referenceDate);
-    const fragmented = this._fragmentEvents(this._events, d, d);
-    const evs = fragmented.filter(e => this._activeCalendars.includes(e.origin));
-    const nowPos = ((new Date().getHours() * 60 + new Date().getMinutes()) / 14.4);
-
-    return html`
-      <div class="day-view-container">
-        <div class="all-day-floating-bar">
-          ${evs.filter(e => e.isAllDay || e.isFragment).map(e => html`
-            <div class="all-day-pill-floating" style="background: ${e.color}">${e.summary}</div>
-          `)}
-        </div>
-        <div class="day-timeline-wrapper">
-          <div class="time-axis">${Array.from({length: 24}, (_, i) => html`<div class="hour-mark">${i}:00</div>`)}</div>
-          <div class="event-stage">
-            ${d.toDateString() === new Date().toDateString() ? html`<div class="now-indicator" style="top: ${nowPos}%"></div>` : ''}
-            ${Array.from({length: 24}).map(() => html`<div class="slot-row"></div>`)}
-            ${evs.filter(e => e.start.dateTime && !e.isFragment).map(e => html`
-                <div class="detailed-ev ${this._isPast(e) ? 'is-past' : ''}" style="${this._getTimeStyles(e)} border-left: 8px solid ${e.color}; background: ${e.color}15" @click="${() => this._selectedEvent = e}">
-                  <div class="ev-summary-large">${e.summary}</div>
-                </div>`)}
-          </div>
         </div>
       </div>`;
   }
 
   _renderTimeGrid(daysCount) {
+    const hours = Array.from({length: 24}, (_, i) => i);
     const start = new Date(this._referenceDate);
     if (daysCount === 7) {
       const day = start.getDay();
       start.setDate(start.getDate() - day + (day === 0 ? -6 : 1));
     }
-    const endRange = new Date(start);
-    endRange.setDate(start.getDate() + daysCount);
-    const fragmented = this._fragmentEvents(this._events, start, endRange);
+    const fragmented = this._fragmentEvents(this._events, start);
 
     return html`
-      <div class="time-grid-wrapper">
-        <div class="time-sidebar"><div class="all-day-label">All Day</div>${Array.from({length: 24}, (_, i) => html`<div class="time-mark">${i}:00</div>`)}</div>
-        <div class="grid-scroll-area" style="--cols: ${daysCount}">
-          ${Array.from({length: daysCount}).map((_, i) => {
-            const d = new Date(start); d.setDate(start.getDate() + i);
-            const evs = fragmented.filter(e => this._activeCalendars.includes(e.origin) && e.displayDate === d.toDateString());
-            return html`
-              <div class="day-column">
-                <div class="col-head">${d.toLocaleDateString('default', {weekday: 'short', day: 'numeric'})}</div>
-                <div class="all-day-header-slot">
-                   ${evs.filter(e => e.isAllDay || e.isFragment).map(e => html`<div class="all-day-pill-small" style="background: ${e.color}">${e.summary}</div>`)}
-                </div>
-                <div class="hour-container">
-                  ${Array.from({length: 24}).map(() => html`<div class="hour-box"></div>`)}
-                  ${evs.filter(e => !e.isAllDay && !e.isFragment).map(e => html`<div class="time-ev ${this._isPast(e) ? 'is-past' : ''}" style="${this._getTimeStyles(e)} background: ${e.color}CC" @click="${() => this._selectedEvent = e}">${e.summary}</div>`)}
-                </div>
-              </div>`;
-          })}
+      <div class="time-grid-root">
+        <div class="all-day-row">
+            <div class="ad-label">All Day</div>
+            <div class="ad-container" style="--cols: ${daysCount}">
+                ${Array.from({length: daysCount}).map((_, i) => {
+                    const d = new Date(start); d.setDate(start.getDate() + i);
+                    const evs = fragmented.filter(e => this._activeCalendars.includes(e.origin) && e.displayDate === d.toDateString() && (e.isAllDay || e.isFragment));
+                    return html`<div class="ad-col">${evs.map(e => html`<div class="ad-pill" style="background:${e.color}">${e.summary}</div>`)}</div>`;
+                })}
+            </div>
+        </div>
+        <div class="scroll-body">
+            <div class="time-sidebar">${hours.map(h => html`<div class="time-mark">${h}:00</div>`)}</div>
+            <div class="grid-columns" style="--cols: ${daysCount}">
+              ${Array.from({length: daysCount}).map((_, i) => {
+                const d = new Date(start); d.setDate(start.getDate() + i);
+                const evs = fragmented.filter(e => this._activeCalendars.includes(e.origin) && e.displayDate === d.toDateString() && !e.isAllDay && !e.isFragment);
+                return html`
+                  <div class="day-col">
+                    <div class="col-head">${d.toLocaleDateString('default', {weekday: 'short', day: 'numeric'})}</div>
+                    <div class="hour-stack">
+                      ${hours.map(() => html`<div class="hour-box"></div>`)}
+                      ${evs.map(e => html`<div class="time-ev ${this._isPast(e) ? 'is-past' : ''}" style="${this._getTimeStyles(e)} background:${e.color}" @click="${() => this._selectedEvent = e}">${e.summary}</div>`)}
+                    </div>
+                  </div>`;
+              })}
+            </div>
         </div>
       </div>`;
   }
 
-  // v1.1.1: Chronologically interleaved Agenda Engine
   _renderAgenda() {
     const fragmented = this._fragmentEvents(this._events);
-    const interleavedEvs = fragmented
-      .filter(e => this._activeCalendars.includes(e.origin))
-      .sort((a, b) => {
-        const dateA = new Date(a.displayDate);
-        const dateB = new Date(b.displayDate);
-        // Primary sort: Date fragment
-        if (dateA - dateB !== 0) return dateA - dateB;
-        // Secondary sort: Event start time
-        return new Date(a.start.dateTime || a.start.date) - new Date(b.start.dateTime || b.start.date);
-      });
+    const interleaved = fragmented.filter(e => this._activeCalendars.includes(e.origin))
+      .sort((a, b) => new Date(a.displayDate) - new Date(b.displayDate) || new Date(a.start.dateTime || a.start.date) - new Date(b.start.dateTime || b.start.date));
 
     return html`
       <div class="agenda-view">
-        ${interleavedEvs.map(e => html`
+        ${interleaved.map(e => html`
           <div class="agenda-row ${this._isPast(e) ? 'is-past' : ''}" @click="${() => this._selectedEvent = e}">
             <div class="agenda-date">
               <span class="day">${new Date(e.displayDate).getDate()}</span>
               <span class="mon">${new Date(e.displayDate).toLocaleString('default', {month:'short'})}</span>
             </div>
-            <div class="agenda-card" style="border-left: 6px solid ${e.color}">
+            <div class="agenda-card" style="border-left: 8px solid ${e.color}">
               <div class="ag-title">${e.summary}</div>
-              <div class="ag-sub">${e.friendly_name} • ${e.isAllDay ? 'All Day' : new Date(e.start.dateTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+              <div class="ag-meta">${e.friendly_name} • ${e.isAllDay ? 'All Day' : new Date(e.start.dateTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
             </div>
-          </div>
-        `)}
+          </div>`)}
       </div>`;
   }
 
-  _renderEventPill(e) {
-    const isMultiDay = new Date(e.start.date || e.start.dateTime).toDateString() !== new Date(e.end.date || e.end.dateTime).toDateString();
-    return html`
-      <div class="ev-pill ${this._isPast(e) ? 'is-past' : ''} ${isMultiDay ? 'multi-day-bar' : ''}" 
-           style="border-left: 4px solid ${e.color}; background:${e.color}15; color:${e.color}" 
-           @click="${(ev) => { ev.stopPropagation(); this._selectedEvent = e; }}">
-          <span class="ev-summary">${e.summary}</span>
-      </div>`;
+  _renderChores() {
+    const active = this._chores.filter(c => c.status !== 'completed');
+    return html`<div class="chores-grid"><h2>Active Chores</h2>${active.map(c => html`<div class="chore-row" style="border-left: 6px solid ${c.color}">${c.summary}</div>`)}</div>`;
   }
 
   _renderDetailModal() {
     return html`
       <div class="modal-backdrop" @click="${() => this._selectedEvent = null}">
         <div class="modal-body" @click="${e => e.stopPropagation()}">
-          <div class="modal-header" style="background: ${this._selectedEvent.color}">
-            <h2>${this._selectedEvent.summary}</h2>
-          </div>
+          <div class="modal-header" style="background: ${this._selectedEvent.color}"><h2>${this._selectedEvent.summary}</h2></div>
           <div class="modal-content">
             <p><strong>Time:</strong> ${new Date(this._selectedEvent.start.dateTime || this._selectedEvent.start.date).toLocaleString()}</p>
-            <p><strong>Calendar:</strong> ${this._selectedEvent.friendly_name}</p>
-            <hr>
-            <div class="description" .innerHTML="${this._sanitize(this._selectedEvent.description)}"></div>
+            <p><strong>Source:</strong> ${this._selectedEvent.friendly_name}</p>
+            <hr><div .innerHTML="${this._sanitize(this._selectedEvent.description)}"></div>
           </div>
-          <button class="close-btn" @click="${() => this._selectedEvent = null}">Close</button>
+          <button class="close-btn" @click="${() => this._selectedEvent = null}">Back</button>
         </div>
       </div>`;
   }
@@ -373,87 +364,68 @@ class NightlightDashboard extends LitElement {
     return html`
       <div class="modal-backdrop" @click="${() => this._showAddModal = false}">
         <div class="modal-body creation" @click="${e => e.stopPropagation()}">
-          <div class="modal-header" style="background: var(--accent)">
-            <h2>New Family Event</h2>
-          </div>
+          <div class="modal-header" style="background: var(--accent)"><h2>New Event</h2></div>
           <div class="modal-content">
             <div class="form-grid">
-              <input id="new_summary" type="text" placeholder="What's happening?" class="full-width">
+              <input id="new_summary" type="text" placeholder="Title" class="full-width">
               <input id="new_date" type="date" value="${new Date().toISOString().split('T')[0]}" class="full-width">
-              <div class="input-group">
-                <label>Start</label>
-                <input id="new_start" type="time" value="10:00">
-              </div>
-              <div class="input-group">
-                <label>End</label>
-                <input id="new_end" type="time" value="11:00">
-              </div>
-              <div class="input-group full-width">
-                <label>Calendar Target</label>
-                <select @change="${(e) => this._selectedCalendarId = e.target.value}">
-                  ${this.config.entities.filter(e => e.entity.startsWith('calendar')).map(ent => html`
-                    <option value="${ent.entity}" ?selected="${this._selectedCalendarId === ent.entity}">
-                      ${this.hass.states[ent.entity]?.attributes.friendly_name || ent.entity}
-                    </option>
-                  `)}
-                </select>
-              </div>
+              <div class="input-group"><label>Start</label><input id="new_start" type="time" value="10:00"></div>
+              <div class="input-group"><label>End</label><input id="new_end" type="time" value="11:00"></div>
+              <div class="input-group full-width"><select @change="${e => this._selectedCalendarId = e.target.value}">
+                  ${this.config.entities.filter(e => e.entity.startsWith('calendar')).map(ent => html`<option value="${ent.entity}">${ent.entity}</option>`)}
+              </select></div>
             </div>
           </div>
-          <div class="modal-actions">
-            <button class="btn-cancel" @click="${() => this._showAddModal = false}">Cancel</button>
-            <button class="btn-save" @click="${this._submitEvent}">Create Event</button>
-          </div>
+          <div class="modal-actions"><button class="btn-cancel" @click="${() => this._showAddModal = false}">Cancel</button><button class="btn-save" @click="${this._submitEvent}">Create</button></div>
         </div>
       </div>`;
   }
+
+  // --- Helpers ---
 
   _getTimeStyles(e) {
     if (!e.start.dateTime) return `display:none`;
     const s = new Date(e.start.dateTime), end = new Date(e.end.dateTime);
     const top = (s.getHours() * 60 + s.getMinutes()) * 1.666;
-    const height = Math.max(((end - s) / 60000) * 1.666, 35);
+    const height = Math.max(((end - s) / 60000) * 1.666, 30);
     return `top:${top}px;height:${height}px`;
   }
 
-  _fragmentEvents(events, startRange, endRange) {
-    const fragmented = [];
-    events.forEach(event => {
-      const start = new Date(event.start.dateTime || event.start.date);
-      const end = new Date(event.end.dateTime || event.end.date);
-      if (start.toDateString() === end.toDateString()) {
-        fragmented.push({...event, displayDate: start.toDateString()});
-      } else {
-        let current = new Date(start);
-        while (current <= end) {
-          if ((!startRange || current >= startRange) && (!endRange || current <= endRange)) {
-            fragmented.push({ ...event, isFragment: true, displayDate: current.toDateString(), isAllDay: true });
-          }
-          current.setDate(current.getDate() + 1);
+  _fragmentEvents(events, startRange) {
+    const res = [];
+    events.forEach(e => {
+      const s = new Date(e.start.dateTime || e.start.date), end = new Date(e.end.dateTime || e.end.date);
+      if (s.toDateString() === end.toDateString()) res.push({...e, displayDate: s.toDateString()});
+      else {
+        let cur = new Date(s);
+        while (cur <= end) {
+          res.push({ ...e, displayDate: cur.toDateString(), isFragment: true });
+          cur.setDate(cur.getDate() + 1);
         }
       }
     });
-    return fragmented;
+    return res;
   }
 
-  _isToday(n) { const t = new Date(); return n === t.getDate() && this._referenceDate.getMonth() === t.getMonth() && this._referenceDate.getFullYear() === t.getFullYear(); }
+  _isToday(n) { const t = new Date(); return n === t.getDate() && this._referenceDate.getMonth() === t.getMonth(); }
+  _sanitize(t) { const div = document.createElement('div'); div.textContent = t || 'No notes.'; return div.innerHTML; }
 
   static get styles() {
     return css`
       :host { --accent: #7b61ff; --bg: #fdfdfd; --card: #fff; --text: #1a1a1b; --border: #eee; }
       .nightlight-hub.dark { --bg: #121212; --card: #1e1e1e; --text: #efefef; --border: #333; }
-      .nightlight-hub { display: grid; grid-template-columns: 100px 1fr; height: calc(100vh - 64px); background: var(--bg); color: var(--text); font-family: sans-serif; overflow: hidden; }
+      .nightlight-hub { display: grid; grid-template-columns: 100px 1fr; height: calc(100vh - 80px); background: var(--bg); color: var(--text); font-family: sans-serif; overflow: hidden; }
       .side-rail { background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 30px 0; z-index: 20; }
       .logo-area { color: var(--accent); margin-bottom: 40px; width: 40px; }
       .nav-btn { background: none; border: none; padding: 20px 0; color: #bbb; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 5px; font-weight: bold; width: 100%; }
+      .nav-btn.active { color: var(--accent); border-right: 4px solid var(--accent); }
       .nav-btn svg { width: 28px; }
-      .nav-btn.active { color: var(--accent); background: rgba(123, 97, 255, 0.05); border-right: 4px solid var(--accent); }
       .main-stage { padding: 30px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; overflow: hidden; }
       .top-bar { flex-shrink: 0; display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 25px; }
       .top-bar h1 { font-size: 2.4rem; font-weight: 800; margin: 0; letter-spacing: -1.2px; }
+      .meta-row { display: flex; align-items: center; gap: 20px; margin-top: 10px; }
       .clock { font-size: 1.2rem; font-weight: 700; color: #888; }
       .nav-arrows button { background: var(--card); border: 1px solid var(--border); border-radius: 50%; width: 36px; height: 36px; cursor: pointer; color: var(--text); }
-      .right-actions { display: flex; align-items: center; gap: 20px; }
       .view-switcher { background: rgba(0,0,0,0.05); padding: 4px; border-radius: 12px; display: flex; }
       .view-switcher button { border: none; background: transparent; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-weight: 800; color: #666; font-size: 0.75rem; }
       .view-switcher button.active { background: var(--card); color: var(--text); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
@@ -462,39 +434,29 @@ class NightlightDashboard extends LitElement {
       .persona.inactive { opacity: 0.1; }
       .persona img { width: 100%; height: 100%; object-fit: cover; }
       .today-btn { background: var(--accent); color: #fff; border: none; padding: 10px 20px; border-radius: 12px; font-weight: 800; cursor: pointer; }
-      .content-area { flex-grow: 1; height: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
-      .calendar-container { display: flex; flex-direction: column; height: 100%; }
-      .week-labels { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; color: #bbb; font-weight: 800; font-size: 0.8rem; padding-bottom: 12px; }
+      .content-area { flex-grow: 1; height: 0; overflow: hidden; }
+      .month-wrapper { height: 100%; display: flex; flex-direction: column; }
+      .labels-row { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; color: #bbb; font-weight: 800; font-size: 0.8rem; padding-bottom: 12px; }
       .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(6, 1fr); gap: 10px; flex-grow: 1; height: 0; }
-      .day-cell { background: var(--card); border: 2px solid var(--border); border-radius: 16px; padding: 12px; overflow: hidden; cursor: pointer; }
+      .day-cell { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 12px; overflow: hidden; cursor: pointer; }
       .day-cell.today { border-color: var(--accent); border-width: 3px; }
-      .day-cell.empty { opacity: 0.1; }
-      .day-number { font-weight: 900; font-size: 1.2rem; margin-bottom: 8px; display: block; }
-      .ev-pill { margin-top: 3px; padding: 5px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .day-num { font-weight: 900; font-size: 1.2rem; }
+      .ev-pill { margin-top: 3px; padding: 5px; border-radius: 4px; color: #fff; font-size: 0.75rem; font-weight: 700; white-space: nowrap; overflow: hidden; }
       .is-past { opacity: 0.35 !important; filter: grayscale(40%); }
-      .multi-day-bar { border-left: none !important; border-top: 4px solid currentColor; border-radius: 0; }
-      .time-grid-wrapper { display: flex; height: 100%; border: 1px solid var(--border); border-radius: 24px; overflow: hidden; background: var(--card); }
-      .time-sidebar { width: 70px; border-right: 1px solid var(--border); background: var(--bg); position: sticky; left: 0; z-index: 10; }
+      .time-grid-root { display: flex; flex-direction: column; height: 100%; border: 1px solid var(--border); border-radius: 24px; overflow: hidden; background: var(--card); }
+      .all-day-row { display: flex; border-bottom: 2px solid var(--border); background: var(--bg); flex-shrink: 0; }
+      .ad-label { width: 70px; border-right: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 900; color: #bbb; }
+      .ad-container { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; padding: 5px; gap: 5px; }
+      .ad-pill { padding: 4px 8px; border-radius: 4px; color: #fff; font-size: 0.7rem; font-weight: 800; white-space: nowrap; overflow: hidden; }
+      .scroll-body { display: flex; flex-grow: 1; overflow-y: auto; overflow-x: hidden; }
+      .time-sidebar { width: 70px; border-right: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
       .time-mark { height: 100px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; color: #888; }
-      .all-day-label { height: 60px; font-weight: 900; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; text-transform: uppercase; color: #bbb; }
-      .grid-scroll-area { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; overflow-y: auto; overflow-x: hidden; scroll-behavior: smooth; }
-      .day-column { border-right: 1px solid var(--border); position: relative; display: flex; flex-direction: column; }
-      .col-head { height: 60px; display: flex; align-items: center; justify-content: center; font-weight: 800; background: var(--card); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; }
-      .all-day-header-slot { min-height: 40px; background: rgba(0,0,0,0.02); border-bottom: 1px solid var(--border); padding: 4px; display: flex; flex-direction: column; gap: 2px; }
-      .all-day-pill-small { padding: 2px 6px; border-radius: 4px; color: #fff; font-size: 0.65rem; font-weight: 800; white-space: nowrap; overflow: hidden; }
-      .hour-container { position: relative; height: 2400px; flex-grow: 1; }
+      .grid-columns { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; }
+      .day-col { border-right: 1px solid var(--border); position: relative; }
+      .col-head { height: 50px; display: flex; align-items: center; justify-content: center; font-weight: 800; border-bottom: 1px solid var(--border); background: var(--card); position: sticky; top: 0; z-index: 5; }
+      .hour-stack { position: relative; height: 2400px; }
       .hour-box { height: 100px; border-bottom: 1px dotted var(--border); }
-      .time-ev { position: absolute; left: 4px; right: 4px; padding: 10px; border-radius: 10px; color: #fff; font-size: 0.9rem; font-weight: 800; cursor: pointer; z-index: 2; }
-      .day-view-container { height: 100%; display: flex; flex-direction: column; }
-      .all-day-floating-bar { display: flex; flex-wrap: wrap; gap: 5px; padding: 10px; background: rgba(0,0,0,0.03); border-bottom: 1px solid var(--border); }
-      .all-day-pill-floating { padding: 6px 12px; border-radius: 20px; color: #fff; font-size: 0.8rem; font-weight: 800; }
-      .day-timeline-wrapper { flex-grow: 1; overflow-y: auto; display: flex; position: relative; }
-      .time-axis { width: 80px; border-right: 1px solid var(--border); }
-      .hour-mark { height: 100px; text-align: center; color: #bbb; font-weight: 800; line-height: 100px; }
-      .event-stage { flex-grow: 1; position: relative; height: 2400px; }
-      .slot-row { height: 100px; border-bottom: 1px solid #f9f9f9; }
-      .now-indicator { position: absolute; left: 0; right: 0; height: 3px; background: #ff3b30; z-index: 10; }
-      .detailed-ev { position: absolute; left: 10px; right: 10px; padding: 15px; border-radius: 12px; font-weight: 800; cursor: pointer; }
+      .time-ev { position: absolute; left: 4px; right: 4px; padding: 10px; border-radius: 10px; color: #fff; font-size: 0.9rem; font-weight: 800; cursor: pointer; }
       .agenda-view { height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
       .agenda-row { display: flex; gap: 15px; align-items: center; background: var(--card); padding: 12px; border-radius: 16px; border: 1px solid var(--border); cursor: pointer; }
       .agenda-date { display: flex; flex-direction: column; align-items: center; width: 50px; }
@@ -521,6 +483,7 @@ class NightlightDashboard extends LitElement {
   }
 }
 
+// --- VISUAL EDITOR ---
 class NightlightCardEditor extends LitElement {
   static get properties() { return { hass: {}, _config: {} }; }
   setConfig(config) { this._config = config; }
@@ -532,8 +495,8 @@ class NightlightCardEditor extends LitElement {
   render() {
     if (!this.hass || !this._config) return html``;
     return html`
-      <div class="schema-editor">
-        <ha-textfield label="Dashboard Title" .value="${this._config.title}" .configValue="${'title'}" @input="${this._valueChanged}"></ha-textfield>
+      <div style="display:flex; flex-direction:column; gap:15px">
+        <ha-textfield label="Hub Title" .value="${this._config.title}" .configValue="${'title'}" @input="${this._valueChanged}"></ha-textfield>
         <ha-select label="Theme" .value="${this._config.theme}" .configValue="${'theme'}" @selected="${this._valueChanged}">
             <mwc-list-item value="light">Skylight Light</mwc-list-item>
             <mwc-list-item value="dark">Nightlight Dark</mwc-list-item>
@@ -548,6 +511,6 @@ customElements.define("nightlight-card-editor", NightlightCardEditor);
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "nightlight-calendar-card",
-  name: "Nightlight Hub v1.1.1",
-  description: "Interleaved sorting + Event Creation + Multi-Day logic."
+  name: "Nightlight Hub v1.1.3",
+  description: "Unabridged build: Interleaved Agenda + Visual Editor."
 });
