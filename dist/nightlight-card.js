@@ -1,7 +1,7 @@
 /**
- * Nightlight Dashboard (v1.0.9)
+ * Nightlight Dashboard (v1.1.1)
  * Senior Dev Lead: Rick P. | Melbourne
- * Features: Past-Event Dulling, Multi-Day Bar Rendering, Split Agenda Fragments
+ * Features: Interleaved Agenda Sort, Event Creation, Temporal Dulling, Multi-Day Logic
  */
 
 import {
@@ -15,14 +15,15 @@ class NightlightDashboard extends LitElement {
     return {
       hass: { type: Object },
       config: { type: Object },
-      _activeView: { type: String },
       _calendarMode: { type: String },
+      _activeCalendars: { type: Array },
       _events: { type: Array },
       _chores: { type: Array },
       _loading: { type: Boolean },
       _referenceDate: { type: Object },
       _selectedEvent: { type: Object },
-      _activeCalendars: { type: Array }
+      _showAddModal: { type: Boolean },
+      _selectedCalendarId: { type: String }
     };
   }
 
@@ -31,14 +32,15 @@ class NightlightDashboard extends LitElement {
 
   constructor() {
     super();
-    this._activeView = 'calendar';
     this._calendarMode = 'month';
     this._referenceDate = new Date();
+    this._activeCalendars = [];
     this._events = [];
     this._chores = [];
-    this._activeCalendars = [];
     this._loading = false;
     this._selectedEvent = null;
+    this._showAddModal = false;
+    this._selectedCalendarId = '';
   }
 
   setConfig(config) {
@@ -47,6 +49,8 @@ class NightlightDashboard extends LitElement {
     if (this._activeCalendars.length === 0 && config.entities) {
       this._activeCalendars = config.entities.map(e => e.entity);
     }
+    const firstCal = config.entities.find(e => e.entity.startsWith('calendar'));
+    this._selectedCalendarId = firstCal ? firstCal.entity : '';
   }
 
   updated(changedProps) {
@@ -60,7 +64,6 @@ class NightlightDashboard extends LitElement {
     this._loading = true;
     try {
       await this._fetchEvents();
-      if (this._activeView === 'chores') await this._fetchChores();
     } finally {
       this._loading = false;
     }
@@ -99,17 +102,29 @@ class NightlightDashboard extends LitElement {
     this._events = results.flat();
   }
 
-  async _fetchChores() {
-    const todoEntities = this.config.entities.filter(e => e.entity.startsWith('todo'));
-    const chores = [];
-    for (const ent of todoEntities) {
-      try {
-        const items = await this.hass.callService('todo', 'get_items', { entity_id: ent.entity }, null, true);
-        const listItems = items[ent.entity]?.items || [];
-        chores.push(...listItems.map(item => ({ ...item, list_id: ent.entity, color: ent.color })));
-      } catch (e) { console.error("Chore fetch failed", e); }
+  async _submitEvent() {
+    const summary = this.shadowRoot.getElementById('new_summary').value;
+    const date = this.shadowRoot.getElementById('new_date').value;
+    const startT = this.shadowRoot.getElementById('new_start').value;
+    const endT = this.shadowRoot.getElementById('new_end').value;
+
+    if (!summary || !date || !startT || !endT) {
+      alert("Please fill all fields.");
+      return;
     }
-    this._chores = chores;
+
+    try {
+      await this.hass.callService('calendar', 'create_event', {
+        entity_id: this._selectedCalendarId,
+        summary: summary,
+        start_date_time: `${date}T${startT}:00`,
+        end_date_time: `${date}T${endT}:00`,
+      });
+      this._showAddModal = false;
+      this._refreshData();
+    } catch (err) {
+      alert("Failed to save event. Check HASS logs.");
+    }
   }
 
   _navigate(dir) {
@@ -146,11 +161,11 @@ class NightlightDashboard extends LitElement {
              <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12,3L2,12H5V20H19V12H22L12,3M12,8.5C13.5,8.5 15,10 15,11.5C15,13.2 12,16 12,16C12,16 9,13.2 9,11.5C9,10 10.5,8.5 12,8.5Z"/></svg>
           </div>
           <div class="nav-items">
-            <button class="nav-btn ${this._activeView === 'calendar' ? 'active' : ''}" @click="${() => this._activeView = 'calendar'}">
+            <button class="nav-btn active">
                <svg viewBox="0 0 24 24"><path fill="currentColor" d="M19,19H5V8H19M16,1V3H8V1H6V3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3H18V1M17,12H12V17H17V12Z"/></svg>
                <span>Calendar</span>
             </button>
-            <button class="nav-btn ${this._activeView === 'chores' ? 'active' : ''}" @click="${() => this._activeView = 'chores'}">
+            <button class="nav-btn" @click="${() => alert('Chores Engine planned for v1.2')}">
                <svg viewBox="0 0 24 24"><path fill="currentColor" d="M9,20.42L2.79,14.21L5.62,11.38L9,14.77L18.88,4.88L21.71,7.71L9,20.42Z"/></svg>
                <span>Chores</span>
             </button>
@@ -189,10 +204,14 @@ class NightlightDashboard extends LitElement {
           </header>
 
           <section class="content-area">
-            ${this._activeView === 'calendar' ? this._renderCalendarView() : this._renderChores()}
+            ${this._renderCalendarView()}
           </section>
         </main>
-        ${this._selectedEvent ? this._renderModal() : ''}
+
+        ${this._selectedEvent ? this._renderDetailModal() : ''}
+        ${this._showAddModal ? this._renderAddModal() : ''}
+        
+        <button class="fab" @click="${() => this._showAddModal = true}">+</button>
       </div>
     `;
   }
@@ -291,20 +310,27 @@ class NightlightDashboard extends LitElement {
       </div>`;
   }
 
+  // v1.1.1: Chronologically interleaved Agenda Engine
   _renderAgenda() {
-    // Fragment all events so multi-day items appear on each day they span
     const fragmented = this._fragmentEvents(this._events);
-    const activeEvs = fragmented
+    const interleavedEvs = fragmented
       .filter(e => this._activeCalendars.includes(e.origin))
-      .sort((a, b) => new Date(a.start.dateTime || a.start.date) - new Date(b.start.dateTime || b.start.date));
+      .sort((a, b) => {
+        const dateA = new Date(a.displayDate);
+        const dateB = new Date(b.displayDate);
+        // Primary sort: Date fragment
+        if (dateA - dateB !== 0) return dateA - dateB;
+        // Secondary sort: Event start time
+        return new Date(a.start.dateTime || a.start.date) - new Date(b.start.dateTime || b.start.date);
+      });
 
     return html`
       <div class="agenda-view">
-        ${activeEvs.map(e => html`
+        ${interleavedEvs.map(e => html`
           <div class="agenda-row ${this._isPast(e) ? 'is-past' : ''}" @click="${() => this._selectedEvent = e}">
             <div class="agenda-date">
-              <span class="day">${new Date(e.displayDate || e.start.dateTime || e.start.date).getDate()}</span>
-              <span class="mon">${new Date(e.displayDate || e.start.dateTime || e.start.date).toLocaleString('default', {month:'short'})}</span>
+              <span class="day">${new Date(e.displayDate).getDate()}</span>
+              <span class="mon">${new Date(e.displayDate).toLocaleString('default', {month:'short'})}</span>
             </div>
             <div class="agenda-card" style="border-left: 6px solid ${e.color}">
               <div class="ag-title">${e.summary}</div>
@@ -325,12 +351,7 @@ class NightlightDashboard extends LitElement {
       </div>`;
   }
 
-  _renderChores() {
-    const active = this._chores.filter(c => c.status !== 'completed');
-    return html`<div class="chores-grid"><div class="chore-col"><h2>To Do</h2>${active.map(c => html`<div class="chore-row" style="border-left: 4px solid ${c.color}">${c.summary}</div>`)}</div></div>`;
-  }
-
-  _renderModal() {
+  _renderDetailModal() {
     return html`
       <div class="modal-backdrop" @click="${() => this._selectedEvent = null}">
         <div class="modal-body" @click="${e => e.stopPropagation()}">
@@ -339,10 +360,50 @@ class NightlightDashboard extends LitElement {
           </div>
           <div class="modal-content">
             <p><strong>Time:</strong> ${new Date(this._selectedEvent.start.dateTime || this._selectedEvent.start.date).toLocaleString()}</p>
+            <p><strong>Calendar:</strong> ${this._selectedEvent.friendly_name}</p>
             <hr>
             <div class="description" .innerHTML="${this._sanitize(this._selectedEvent.description)}"></div>
           </div>
           <button class="close-btn" @click="${() => this._selectedEvent = null}">Close</button>
+        </div>
+      </div>`;
+  }
+
+  _renderAddModal() {
+    return html`
+      <div class="modal-backdrop" @click="${() => this._showAddModal = false}">
+        <div class="modal-body creation" @click="${e => e.stopPropagation()}">
+          <div class="modal-header" style="background: var(--accent)">
+            <h2>New Family Event</h2>
+          </div>
+          <div class="modal-content">
+            <div class="form-grid">
+              <input id="new_summary" type="text" placeholder="What's happening?" class="full-width">
+              <input id="new_date" type="date" value="${new Date().toISOString().split('T')[0]}" class="full-width">
+              <div class="input-group">
+                <label>Start</label>
+                <input id="new_start" type="time" value="10:00">
+              </div>
+              <div class="input-group">
+                <label>End</label>
+                <input id="new_end" type="time" value="11:00">
+              </div>
+              <div class="input-group full-width">
+                <label>Calendar Target</label>
+                <select @change="${(e) => this._selectedCalendarId = e.target.value}">
+                  ${this.config.entities.filter(e => e.entity.startsWith('calendar')).map(ent => html`
+                    <option value="${ent.entity}" ?selected="${this._selectedCalendarId === ent.entity}">
+                      ${this.hass.states[ent.entity]?.attributes.friendly_name || ent.entity}
+                    </option>
+                  `)}
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button class="btn-cancel" @click="${() => this._showAddModal = false}">Cancel</button>
+            <button class="btn-save" @click="${this._submitEvent}">Create Event</button>
+          </div>
         </div>
       </div>`;
   }
@@ -382,30 +443,25 @@ class NightlightDashboard extends LitElement {
       :host { --accent: #7b61ff; --bg: #fdfdfd; --card: #fff; --text: #1a1a1b; --border: #eee; }
       .nightlight-hub.dark { --bg: #121212; --card: #1e1e1e; --text: #efefef; --border: #333; }
       .nightlight-hub { display: grid; grid-template-columns: 100px 1fr; height: calc(100vh - 64px); background: var(--bg); color: var(--text); font-family: sans-serif; overflow: hidden; }
-      
       .side-rail { background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 30px 0; z-index: 20; }
       .logo-area { color: var(--accent); margin-bottom: 40px; width: 40px; }
       .nav-btn { background: none; border: none; padding: 20px 0; color: #bbb; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 5px; font-weight: bold; width: 100%; }
       .nav-btn svg { width: 28px; }
       .nav-btn.active { color: var(--accent); background: rgba(123, 97, 255, 0.05); border-right: 4px solid var(--accent); }
-      
       .main-stage { padding: 30px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; overflow: hidden; }
       .top-bar { flex-shrink: 0; display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 25px; }
       .top-bar h1 { font-size: 2.4rem; font-weight: 800; margin: 0; letter-spacing: -1.2px; }
       .clock { font-size: 1.2rem; font-weight: 700; color: #888; }
       .nav-arrows button { background: var(--card); border: 1px solid var(--border); border-radius: 50%; width: 36px; height: 36px; cursor: pointer; color: var(--text); }
-      
       .right-actions { display: flex; align-items: center; gap: 20px; }
       .view-switcher { background: rgba(0,0,0,0.05); padding: 4px; border-radius: 12px; display: flex; }
       .view-switcher button { border: none; background: transparent; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-weight: 800; color: #666; font-size: 0.75rem; }
       .view-switcher button.active { background: var(--card); color: var(--text); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
-      
       .persona-filters { display: flex; gap: 8px; }
       .persona { width: 40px; height: 40px; border-radius: 50%; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 900; cursor: pointer; overflow: hidden; }
       .persona.inactive { opacity: 0.1; }
       .persona img { width: 100%; height: 100%; object-fit: cover; }
       .today-btn { background: var(--accent); color: #fff; border: none; padding: 10px 20px; border-radius: 12px; font-weight: 800; cursor: pointer; }
-
       .content-area { flex-grow: 1; height: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
       .calendar-container { display: flex; flex-direction: column; height: 100%; }
       .week-labels { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; color: #bbb; font-weight: 800; font-size: 0.8rem; padding-bottom: 12px; }
@@ -415,16 +471,12 @@ class NightlightDashboard extends LitElement {
       .day-cell.empty { opacity: 0.1; }
       .day-number { font-weight: 900; font-size: 1.2rem; margin-bottom: 8px; display: block; }
       .ev-pill { margin-top: 3px; padding: 5px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      
-      /* v1.0.9: Past Event Dulling */
       .is-past { opacity: 0.35 !important; filter: grayscale(40%); }
       .multi-day-bar { border-left: none !important; border-top: 4px solid currentColor; border-radius: 0; }
-
       .time-grid-wrapper { display: flex; height: 100%; border: 1px solid var(--border); border-radius: 24px; overflow: hidden; background: var(--card); }
       .time-sidebar { width: 70px; border-right: 1px solid var(--border); background: var(--bg); position: sticky; left: 0; z-index: 10; }
       .time-mark { height: 100px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; color: #888; }
       .all-day-label { height: 60px; font-weight: 900; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; text-transform: uppercase; color: #bbb; }
-      
       .grid-scroll-area { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; overflow-y: auto; overflow-x: hidden; scroll-behavior: smooth; }
       .day-column { border-right: 1px solid var(--border); position: relative; display: flex; flex-direction: column; }
       .col-head { height: 60px; display: flex; align-items: center; justify-content: center; font-weight: 800; background: var(--card); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; }
@@ -433,8 +485,6 @@ class NightlightDashboard extends LitElement {
       .hour-container { position: relative; height: 2400px; flex-grow: 1; }
       .hour-box { height: 100px; border-bottom: 1px dotted var(--border); }
       .time-ev { position: absolute; left: 4px; right: 4px; padding: 10px; border-radius: 10px; color: #fff; font-size: 0.9rem; font-weight: 800; cursor: pointer; z-index: 2; }
-
-      /* Day View Floating Bar */
       .day-view-container { height: 100%; display: flex; flex-direction: column; }
       .all-day-floating-bar { display: flex; flex-wrap: wrap; gap: 5px; padding: 10px; background: rgba(0,0,0,0.03); border-bottom: 1px solid var(--border); }
       .all-day-pill-floating { padding: 6px 12px; border-radius: 20px; color: #fff; font-size: 0.8rem; font-weight: 800; }
@@ -445,22 +495,28 @@ class NightlightDashboard extends LitElement {
       .slot-row { height: 100px; border-bottom: 1px solid #f9f9f9; }
       .now-indicator { position: absolute; left: 0; right: 0; height: 3px; background: #ff3b30; z-index: 10; }
       .detailed-ev { position: absolute; left: 10px; right: 10px; padding: 15px; border-radius: 12px; font-weight: 800; cursor: pointer; }
-
-      /* Agenda Enhancements */
       .agenda-view { height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-      .agenda-row { display: flex; gap: 15px; align-items: center; background: var(--card); padding: 12px; border-radius: 16px; border: 1px solid var(--border); cursor: pointer; transition: 0.2s; }
+      .agenda-row { display: flex; gap: 15px; align-items: center; background: var(--card); padding: 12px; border-radius: 16px; border: 1px solid var(--border); cursor: pointer; }
       .agenda-date { display: flex; flex-direction: column; align-items: center; width: 50px; }
       .agenda-date .day { font-size: 1.8rem; font-weight: 900; }
       .agenda-date .mon { font-size: 0.75rem; font-weight: 800; text-transform: uppercase; color: var(--accent); }
       .agenda-card { flex-grow: 1; padding-left: 15px; }
       .ag-title { font-size: 1.2rem; font-weight: 800; }
       .ag-sub { color: #888; font-weight: 600; font-size: 0.85rem; }
-
       .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(10px); }
-      .modal-body { background: var(--card); width: 500px; border-radius: 32px; overflow: hidden; }
+      .modal-body { background: var(--card); width: 500px; border-radius: 32px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+      .modal-body.creation { width: 600px; }
       .modal-header { padding: 30px; color: #fff; }
       .modal-content { padding: 30px; font-size: 1rem; line-height: 1.6; }
       .close-btn { width: 100%; padding: 20px; border: none; background: var(--accent); color: #fff; font-weight: 900; cursor: pointer; }
+      .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+      .full-width { grid-column: span 2; }
+      input, select { padding: 15px; border-radius: 12px; border: 2px solid var(--border); font-size: 1rem; font-weight: 600; background: var(--bg); color: var(--text); }
+      label { display: block; font-weight: 800; color: #888; font-size: 0.8rem; text-transform: uppercase; margin-bottom: 5px; }
+      .modal-actions { display: flex; }
+      .btn-cancel { flex: 1; padding: 25px; border: none; background: #eee; font-weight: 800; cursor: pointer; }
+      .btn-save { flex: 1; padding: 25px; border: none; background: var(--accent); color: #fff; font-weight: 800; cursor: pointer; }
+      .fab { position: fixed; bottom: 40px; right: 40px; width: 85px; height: 85px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 3.5rem; cursor: pointer; box-shadow: 0 10px 25px rgba(123, 97, 255, 0.4); z-index: 100; }
     `;
   }
 }
@@ -492,6 +548,6 @@ customElements.define("nightlight-card-editor", NightlightCardEditor);
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "nightlight-calendar-card",
-  name: "Nightlight Hub v1.0.9",
-  description: "Refined multi-day logic + Past event dulling."
+  name: "Nightlight Hub v1.1.1",
+  description: "Interleaved sorting + Event Creation + Multi-Day logic."
 });
