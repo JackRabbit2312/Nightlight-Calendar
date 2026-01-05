@@ -1,7 +1,7 @@
 /**
- * Nightlight Dashboard (v0.3.3)
- * Author: Rick P. | Melbourne Branch
- * Feature: Advanced Visual Editor & Entity Personas
+ * Nightlight Dashboard (v0.3.9)
+ * Consolidated Build: Month, Week, Day, Chores, Persona Filtering
+ * Author: Rick P. 
  */
 
 import {
@@ -16,12 +16,15 @@ class NightlightDashboard extends LitElement {
     return {
       hass: { type: Object },
       config: { type: Object },
-      _activeView: { type: String },
+      _activeView: { type: String },    // 'calendar' or 'chores'
+      _calendarMode: { type: String }, // 'month', 'week', 'day'
+      _activeCalendars: { type: Array },
       _events: { type: Array },
       _chores: { type: Array },
       _loading: { type: Boolean },
       _referenceDate: { type: Object },
-      _showAddModal: { type: Boolean }
+      _showAddModal: { type: Boolean },
+      _selectedEvent: { type: Object }
     };
   }
 
@@ -31,18 +34,20 @@ class NightlightDashboard extends LitElement {
   constructor() {
     super();
     this._activeView = 'calendar';
+    this._calendarMode = 'month';
+    this._activeCalendars = [];
     this._referenceDate = new Date();
     this._events = [];
     this._chores = [];
+    this._loading = false;
     this._showAddModal = false;
   }
 
   setConfig(config) {
-    this.config = {
-      title: "Family Hub",
-      theme: "light",
-      ...config
-    };
+    this.config = { title: "Family Hub", ...config };
+    if (this._activeCalendars.length === 0) {
+      this._activeCalendars = config.entities.map(e => e.entity || e);
+    }
   }
 
   updated(changedProps) {
@@ -62,70 +67,156 @@ class NightlightDashboard extends LitElement {
     }
   }
 
+  updated(changedProps) {
+    if (changedProps.has('hass') || changedProps.has('_activeView') || changedProps.has('_calendarMode') || changedProps.has('_referenceDate')) {
+      this._refreshData();
+    }
+  }
+
+  async _refreshData() {
+    if (!this.hass) return;
+    this._loading = true;
+    try {
+      if (this._activeView === 'calendar') await this._fetchEvents();
+      if (this._activeView === 'chores') await this._fetchChores();
+    } finally {
+      this._loading = false;
+    }
+  }
+
   async _fetchEvents() {
-    const start = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth(), 1).toISOString();
-    const end = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth() + 1, 0).toISOString();
+    let start = new Date(this._referenceDate);
+    let end = new Date(this._referenceDate);
+
+    if (this._calendarMode === 'month') {
+      start = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth(), 1);
+      end = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth() + 1, 0, 23, 59, 59);
+    } else if (this._calendarMode === 'week') {
+      const day = start.getDay();
+      const diff = start.getDate() - day + (day === 0 ? -6 : 1);
+      start.setDate(diff);
+      start.setHours(0,0,0,0);
+      end = new Date(start);
+      end.setDate(start.getDate() + 7);
+    } else {
+      start.setHours(0,0,0,0);
+      end.setHours(23,59,59,999);
+    }
+
     const promises = this.config.entities.filter(e => e.entity.startsWith('calendar')).map(ent => {
-      return this.hass.callApi('GET', `calendars/${ent.entity}?start=${start}&end=${end}`)
+      return this.hass.callApi('GET', `calendars/${ent.entity}?start=${start.toISOString()}&end=${end.toISOString()}`)
         .then(evs => evs.map(e => ({ ...e, color: ent.color, origin: ent.entity })));
     });
     const results = await Promise.all(promises);
     this._events = results.flat();
   }
 
+  async _fetchChores() {
+    const todoEntities = this.config.entities.filter(e => e.entity.startsWith('todo'));
+    const chores = [];
+    for (const ent of todoEntities) {
+      try {
+        const items = await this.hass.callService('todo', 'get_items', { entity_id: ent.entity }, null, true);
+        const listItems = items[ent.entity]?.items || [];
+        chores.push(...listItems.map(item => ({ ...item, list_id: ent.entity, color: ent.color })));
+      } catch (e) { console.error("Chore fetch failed", e); }
+    }
+    this._chores = chores;
+  }
+
+  _togglePersona(entityId) {
+    if (this._activeCalendars.includes(entityId)) {
+      this._activeCalendars = this._activeCalendars.filter(id => id !== entityId);
+    } else {
+      this._activeCalendars = [...this._activeCalendars, entityId];
+    }
+  }
+
+  _getTimeStyles(event) {
+    if (!event.start.dateTime) return `display:none;`;
+    const start = new Date(event.start.dateTime);
+    const end = new Date(event.end.dateTime);
+    const top = ((start.getHours() * 60 + start.getMinutes()) / 14.4);
+    const height = Math.max(((end - start) / 60000) / 14.4, 2);
+    return `top: ${top}%; height: ${height}%;`;
+  }
+
+  _sanitize(text) {
+    const temp = document.createElement('div');
+    temp.textContent = text;
+    return temp.innerHTML;
+  }
+
   render() {
     if (!this.hass) return html``;
 
     return html`
-      <div class="nightlight-hub ${this.config.theme || 'light'}">
+      <div class="nightlight-hub">
         <nav class="side-rail">
-          <div class="logo">N</div>
+          <div class="logo-area">
+            <ha-icon icon="mdi:home-heart"></ha-icon>
+          </div>
           <div class="nav-items">
             <button class="nav-btn ${this._activeView === 'calendar' ? 'active' : ''}" @click="${() => this._activeView = 'calendar'}">
-                <ha-icon icon="mdi:calendar-month"></ha-icon>
-                <span>Calendar</span>
+              <ha-icon icon="mdi:calendar-month"></ha-icon>
+              <span>Calendar</span>
             </button>
             <button class="nav-btn ${this._activeView === 'chores' ? 'active' : ''}" @click="${() => this._activeView = 'chores'}">
-                <ha-icon icon="mdi:checkbox-marked-circle-outline"></ha-icon>
-                <span>Chores</span>
+              <ha-icon icon="mdi:checkbox-marked-circle-outline"></ha-icon>
+              <span>Chores</span>
             </button>
           </div>
         </nav>
 
         <main class="main-stage">
           <header class="top-bar">
-            <div class="info">
-                <h1>${this._activeView === 'calendar' ? this.config.title : 'Chore Tracker'}</h1>
-                <div class="sub-header">
-                  <span class="clock">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                  <div class="meal-plan" @click="${() => this._activeView = 'chores'}">
-                    <ha-icon icon="mdi:silverware-fork-knife"></ha-icon>
-                    <span>Dinner: ${this.hass.states[this.config.meal_entity]?.state || 'Plan a meal'}</span>
-                  </div>
+            <div class="left-info">
+              <h1>${this._activeView === 'calendar' ? this.config.title : 'Chore Tracker'}</h1>
+              <div class="meta-row">
+                <span class="clock">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                <div class="meal-tag" @click="${() => { this._activeView = 'calendar'; this._calendarMode = 'day'; this._referenceDate = new Date(); }}">
+                  <ha-icon icon="mdi:silverware-fork-knife"></ha-icon>
+                  <span>Dinner: ${this.hass.states[this.config.meal_entity]?.state || 'Plan a meal'}</span>
                 </div>
+              </div>
             </div>
-            
-            <div class="nav-actions">
-                <button class="today-btn" @click="${() => this._referenceDate = new Date()}">Today</button>
-                <div class="profile-strip">
-                    ${this.config.entities.slice(0, 5).map(ent => html`
-                        <div class="persona-circle" style="background: ${ent.color || '#eee'}">
-                            ${ent.picture ? html`<img src="${ent.picture}">` : 
-                              (ent.icon ? html`<ha-icon icon="${ent.icon}"></ha-icon>` : ent.entity.split('.')[1][0].toUpperCase())}
-                        </div>
-                    `)}
-                </div>
+
+            <div class="right-actions">
+              <div class="view-switcher">
+                <button class="${this._calendarMode === 'month' ? 'active' : ''}" @click="${() => this._calendarMode = 'month'}">Month</button>
+                <button class="${this._calendarMode === 'week' ? 'active' : ''}" @click="${() => this._calendarMode = 'week'}">Week</button>
+                <button class="${this._calendarMode === 'day' ? 'active' : ''}" @click="${() => this._calendarMode = 'day'}">Day</button>
+              </div>
+              <button class="today-btn" @click="${() => this._referenceDate = new Date()}">Today</button>
+              <div class="persona-filters">
+                ${this.config.entities.map(ent => {
+                  const active = this._activeCalendars.includes(ent.entity);
+                  return html`
+                    <div class="persona ${active ? 'active' : 'inactive'}" 
+                         style="background: ${ent.color}" 
+                         @click="${() => this._togglePersona(ent.entity)}">
+                      ${ent.picture ? html`<img src="${ent.picture}">` : ent.entity.split('.')[1][0].toUpperCase()}
+                    </div>
+                  `;
+                })}
+              </div>
             </div>
           </header>
 
-          <section class="content">
-            ${this._activeView === 'calendar' ? this._renderCalendar() : html`<div>Chores View</div>`}
+          <section class="content-area">
+            ${this._activeView === 'calendar' ? this._renderCalendarView() : this._renderChores()}
           </section>
         </main>
 
         <button class="fab" @click="${() => this._showAddModal = true}">+</button>
       </div>
     `;
+  }
+
+  _renderCalendarView() {
+    if (this._calendarMode === 'month') return this._renderMonthGrid();
+    if (this._calendarMode === 'day') return this._renderDayView();
+    return this._renderTimeGrid(7);
   }
 
 // --- v0.3.4 CALENDAR ENGINE ---
