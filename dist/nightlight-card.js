@@ -1,7 +1,7 @@
 /**
- * Nightlight Dashboard (v1.0.0)
- * Final Consolidated Build: Month, Week, Day, Chores
- * Designed for Rick P. | Melbourne FHD Touch Panel
+ * Nightlight Dashboard (v1.0.1)
+ * Senior Dev Lead: Rick P. | Master Build
+ * Fixed: Naming collisions, duplicate logic, and split-read errors.
  */
 
 import {
@@ -40,18 +40,17 @@ class NightlightDashboard extends LitElement {
     this._chores = [];
     this._loading = false;
     this._showAddModal = false;
-    this._selectedEvent = null;
   }
 
   setConfig(config) {
+    if (!config.entities) throw new Error("Define entities in config.");
     this.config = { title: "Family Hub", theme: "light", ...config };
-    if (this._activeCalendars.length === 0 && config.entities) {
+    if (this._activeCalendars.length === 0) {
       this._activeCalendars = config.entities.map(e => e.entity || e);
     }
   }
 
-  // --- LifeCycle & Data ---
-
+  // --- Core Lifecycle ---
   updated(changedProps) {
     if (changedProps.has('hass') || changedProps.has('_activeView') || changedProps.has('_calendarMode') || changedProps.has('_referenceDate')) {
       this._refreshData();
@@ -101,73 +100,23 @@ class NightlightDashboard extends LitElement {
     const chores = [];
     for (const ent of todoEntities) {
       try {
-        const items = await this.hass.callService('todo', 'get_items', { entity_id: ent.entity }, null, true);
-        const listItems = items[ent.entity]?.items || [];
-        chores.push(...listItems.map(item => ({ ...item, list_id: ent.entity, color: ent.color })));
+        const state = this.hass.states[ent.entity];
+        if (state) {
+          const items = await this.hass.callService('todo', 'get_items', { entity_id: ent.entity }, null, true);
+          const listItems = items[ent.entity]?.items || [];
+          chores.push(...listItems.map(item => ({ ...item, list_id: ent.entity, color: ent.color })));
+        }
       } catch (e) { console.error("Chore fetch failed", e); }
     }
     this._chores = chores;
   }
 
-  // --- Helpers ---
-
-  _togglePersona(entityId) {
-    if (this._activeCalendars.includes(entityId)) {
-      this._activeCalendars = this._activeCalendars.filter(id => id !== entityId);
-    } else {
-      this._activeCalendars = [...this._activeCalendars, entityId];
-    }
-  }
-
-  _getTimeStyles(event) {
-    if (!event.start.dateTime) return `display:none;`;
-    const start = new Date(event.start.dateTime);
-    const end = new Date(event.end.dateTime);
-    const top = ((start.getHours() * 60 + start.getMinutes()) / 14.4);
-    const height = Math.max(((end - start) / 60000) / 14.4, 2);
-    return `top: ${top}%; height: ${height}%;`;
-  }
-
-  _sanitize(text) {
-    const temp = document.createElement('div');
-    temp.textContent = text;
-    return temp.innerHTML;
-  }
-
-  _isToday(n) {
-    const today = new Date();
-    return n === today.getDate() && 
-           this._referenceDate.getMonth() === today.getMonth() && 
-           this._referenceDate.getFullYear() === today.getFullYear();
-  }
-
-  _fragmentEvents(events, startRange, endRange) {
-    const fragmented = [];
-    events.forEach(event => {
-      const start = new Date(event.start.dateTime || event.start.date);
-      const end = new Date(event.end.dateTime || event.end.date);
-      if (start.toDateString() === end.toDateString()) {
-        fragmented.push(event);
-      } else {
-        let current = new Date(start);
-        while (current <= end && current <= endRange) {
-          if (current >= startRange) {
-            fragmented.push({ ...event, isFragment: true, displayDate: current.toDateString(), isAllDay: true });
-          }
-          current.setDate(current.getDate() + 1);
-        }
-      }
-    });
-    return fragmented;
-  }
-
-  // --- Render Router ---
-
+  // --- Rendering Engines ---
   render() {
-    if (!this.hass) return html``;
+    if (!this.hass || !this.config) return html``;
 
     return html`
-      <div class="nightlight-hub ${this.config.theme}">
+      <div class="nightlight-hub">
         <nav class="side-rail">
           <div class="logo-area"><ha-icon icon="mdi:home-heart"></ha-icon></div>
           <div class="nav-items">
@@ -192,6 +141,7 @@ class NightlightDashboard extends LitElement {
                 </div>
               </div>
             </div>
+
             <div class="right-actions">
               <div class="view-switcher">
                 <button class="${this._calendarMode === 'month' ? 'active' : ''}" @click="${() => this._calendarMode = 'month'}">Month</button>
@@ -201,10 +151,11 @@ class NightlightDashboard extends LitElement {
               <button class="today-btn" @click="${() => this._referenceDate = new Date()}">Today</button>
               <div class="persona-filters">
                 ${this.config.entities.map(ent => html`
-                  <div class="persona ${this._activeCalendars.includes(ent.entity) ? 'active' : 'inactive'}" 
-                       style="background: ${ent.color}" @click="${() => this._togglePersona(ent.entity)}">
-                    ${ent.picture ? html`<img src="${ent.picture}">` : ent.entity.split('.')[1][0].toUpperCase()}
-                  </div>
+                    <div class="persona ${this._activeCalendars.includes(ent.entity) ? 'active' : 'inactive'}" 
+                         style="background: ${ent.color}" 
+                         @click="${() => this._togglePersona(ent.entity)}">
+                      ${ent.picture ? html`<img src="${ent.picture}">` : (ent.entity.includes('.') ? ent.entity.split('.')[1][0].toUpperCase() : '👤')}
+                    </div>
                 `)}
               </div>
             </div>
@@ -225,8 +176,6 @@ class NightlightDashboard extends LitElement {
     return this._renderTimeGrid(7);
   }
 
-  // --- Rendering Engines ---
-
   _renderMonthGrid() {
     const start = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth(), 1);
     const end = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth() + 1, 0);
@@ -244,7 +193,7 @@ class NightlightDashboard extends LitElement {
             return html`
               <div class="day-cell ${!d.cur ? 'empty' : ''} ${this._isToday(d.n) ? 'today' : ''}">
                 <span class="day-number">${d.n}</span>
-                <div class="event-stack">${evs.slice(0, 4).map(e => this._renderEventPill(e))}</div>
+                <div class="event-stack">${evs.slice(0, 4).map(e => html`<div class="ev-pill" style="background:${e.color}22; border-left: 4px solid ${e.color}; color:${e.color}">${e.summary}</div>`)}</div>
               </div>`;
           })}
         </div>
@@ -271,8 +220,9 @@ class NightlightDashboard extends LitElement {
             return html`
               <div class="day-column">
                 <div class="col-head">${d.toLocaleDateString('default', {weekday: 'short', day: 'numeric'})}</div>
-                <div class="hour-container">${Array.from({length: 24}).map(() => html`<div class="hour-box"></div>`)}
-                  ${evs.map(e => html`<div class="time-ev" style="${this._getTimeStyles(e)} background: ${e.color}CC">${e.summary}</div>`)}
+                <div class="hour-container">
+                  ${Array.from({length: 24}).map(() => html`<div class="hour-box"></div>`)}
+                  ${evs.map(e => html`<div class="time-ev" style="${this._getTimeStyles(e)} background:${e.color}">${e.summary}</div>`)}
                 </div>
               </div>`;
           })}
@@ -283,44 +233,62 @@ class NightlightDashboard extends LitElement {
   _renderDayView() {
     const d = new Date(this._referenceDate);
     const evs = this._fragmentEvents(this._events, d, d).filter(e => this._activeCalendars.includes(e.origin));
-    const nowPos = ((new Date().getHours() * 60 + new Date().getMinutes()) / 14.4);
-
     return html`
       <div class="day-view-container">
         <div class="day-timeline-wrapper">
           <div class="time-axis">${Array.from({length: 24}, (_, i) => html`<div class="hour-mark">${i}:00</div>`)}</div>
           <div class="event-stage">
-            ${d.toDateString() === new Date().toDateString() ? html`<div class="now-indicator" style="top: ${nowPos}%"></div>` : ''}
             ${Array.from({length: 24}).map(() => html`<div class="slot-row"></div>`)}
-            ${evs.filter(e => e.start.dateTime).map(e => html`
-              <div class="detailed-ev" style="${this._getTimeStyles(e)} border-left: 8px solid ${e.color}; background: ${e.color}15">
-                <div class="ev-summary-large">${e.summary}</div>
-              </div>`)}
+            ${evs.map(e => html`<div class="detailed-ev" style="${this._getTimeStyles(e)} border-left:8px solid ${e.color}; background:${e.color}15"><div class="ev-summary-large">${e.summary}</div></div>`)}
           </div>
         </div>
       </div>`;
   }
 
-  _renderEventPill(e) {
-    return html`<div class="ev-pill" style="border-left: 4px solid ${e.color}; background: ${e.color}15; color: ${e.color}">${e.summary}</div>`;
-  }
-
   _renderChores() {
     const active = this._chores.filter(c => c.status !== 'completed');
-    return html`<div class="chores-grid"><div class="chore-col"><h2>To Do</h2>${active.map(c => html`<div class="chore-row" style="border-left: 4px solid ${c.color}">${c.summary}</div>`)}</div></div>`;
+    return html`<div class="chores-grid"><div class="chore-col"><h2>To Do</h2>${active.map(c => html`<div class="chore-row" style="border-left:4px solid ${c.color}">${c.summary}</div>`)}</div></div>`;
+  }
+
+  // --- Utility Helpers ---
+  _togglePersona(id) {
+    this._activeCalendars = this._activeCalendars.includes(id) ? this._activeCalendars.filter(i => i !== id) : [...this._activeCalendars, id];
+  }
+  _isToday(n) { const today = new Date(); return n === today.getDate() && this._referenceDate.getMonth() === today.getMonth(); }
+  _getTimeStyles(e) {
+    if (!e.start.dateTime) return `display:none`;
+    const s = new Date(e.start.dateTime), end = new Date(e.end.dateTime);
+    const top = (s.getHours() * 60 + s.getMinutes()) / 14.4, height = Math.max(((end - s) / 60000) / 14.4, 2);
+    return `top:${top}%;height:${height}%`;
+  }
+  _sanitize(t) { const div = document.createElement('div'); div.textContent = t; return div.innerHTML; }
+  _fragmentEvents(evs, sR, eR) {
+    const res = [];
+    evs.forEach(e => {
+      const s = new Date(e.start.dateTime || e.start.date), end = new Date(e.end.dateTime || e.end.date);
+      if (s.toDateString() === end.toDateString()) res.push(e);
+      else {
+        let cur = new Date(s);
+        while (cur <= end && cur <= eR) {
+          if (cur >= sR) res.push({ ...e, isFragment: true, displayDate: cur.toDateString(), isAllDay: true });
+          cur.setDate(cur.getDate() + 1);
+        }
+      }
+    });
+    return res;
   }
 
   static get styles() {
     return css`
       :host { --accent: #7b61ff; --bg: #fdfdfd; --card: #fff; --text: #1a1a1b; --border: #eee; }
-      .nightlight-hub { display: grid; grid-template-columns: 120px 1fr; height: 100vh; background: var(--bg); color: var(--text); font-family: sans-serif; overflow: hidden; }
+      .nightlight-hub { display: grid; grid-template-columns: 120px 1fr; height: 100vh; background: var(--bg); font-family: sans-serif; overflow: hidden; }
       .side-rail { background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 40px 0; }
       .logo-area { color: var(--accent); margin-bottom: 50px; --mdc-icon-size: 40px; }
       .nav-btn { background: none; border: none; padding: 20px 0; color: #bbb; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; font-weight: bold; width: 100%; }
       .nav-btn.active { color: var(--accent); background: rgba(123, 97, 255, 0.05); border-right: 4px solid var(--accent); }
       .main-stage { padding: 40px; overflow-y: auto; }
       .top-bar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; }
-      .top-bar h1 { font-size: 2.8rem; font-weight: 800; margin: 0; letter-spacing: -1.5px; }
+      .top-bar h1 { font-size: 2.8rem; font-weight: 800; margin: 0; }
       .meta-row { display: flex; align-items: center; gap: 20px; margin-top: 8px; }
       .clock { color: #888; font-weight: 700; font-size: 1.2rem; }
       .meal-tag { background: #fff2e6; color: #ff9500; padding: 6px 16px; border-radius: 10px; font-weight: 800; display: flex; align-items: center; gap: 8px; cursor: pointer; }
@@ -372,14 +340,13 @@ class NightlightCardEditor extends LitElement {
     this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: newConfig }, bubbles: true, composed: true }));
   }
   render() {
-    return html`
-      <div class="schema-editor">
-        <ha-textfield label="Dashboard Title" .value="${this._config.title}" .configValue="${'title'}" @input="${this._valueChanged}"></ha-textfield>
-        <ha-select label="Theme" .value="${this._config.theme}" .configValue="${'theme'}" @selected="${this._valueChanged}">
-            <mwc-list-item value="light">Skylight Light</mwc-list-item>
-            <mwc-list-item value="dark">Nightlight Dark</mwc-list-item>
-        </ha-select>
-      </div>`;
+    return html`<div class="schema-editor">
+      <ha-textfield label="Dashboard Title" .value="${this._config.title}" .configValue="${'title'}" @input="${this._valueChanged}"></ha-textfield>
+      <ha-select label="Theme" .value="${this._config.theme}" .configValue="${'theme'}" @selected="${this._valueChanged}">
+          <mwc-list-item value="light">Skylight Light</mwc-list-item>
+          <mwc-list-item value="dark">Nightlight Dark</mwc-list-item>
+      </ha-select>
+    </div>`;
   }
 }
 
