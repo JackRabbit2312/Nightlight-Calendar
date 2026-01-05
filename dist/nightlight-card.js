@@ -224,8 +224,8 @@ class NightlightDashboard extends LitElement {
   render() {
     if (!this.hass) return html``;
     
-    // Dynamic Header Requirements
-    const headerTitle = this._calendarMode === 'month' && this._activeView === 'calendar'
+    // v1.1.8: Title Requirement - Always show Month/Year when in calendar view
+    const headerTitle = this._activeView === 'calendar'
         ? this._referenceDate.toLocaleString('default', { month: 'long', year: 'numeric' })
         : this.config.title;
 
@@ -239,6 +239,14 @@ class NightlightDashboard extends LitElement {
             <button class="nav-btn ${this._activeView === 'calendar' ? 'active' : ''}" @click="${() => this._activeView = 'calendar'}">
                <svg viewBox="0 0 24 24"><path fill="currentColor" d="M19,19H5V8H19M16,1V3H8V1H6V3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3H18V1M17,12H12V17H17V12Z"/></svg>
                <span>Calendar</span>
+            </button>
+            <button class="nav-btn ${this._activeView === 'meals' ? 'active' : ''}" @click="${() => this._activeView = 'meals'}">
+               <svg viewBox="0 0 24 24"><path fill="currentColor" d="M11,9H9V2H7V9H5V2H3V9C3,11.12 4.66,12.84 6.75,12.97V22H9.25V12.97C11.34,12.84 13,11.12 13,9V2H11V9M16,6V14H18.5V22H21V2H16C16,3.33 16,4.67 16,6Z"/></svg>
+               <span>Dinner</span>
+            </button>
+            <button class="nav-btn ${this._activeView === 'whiteboard' ? 'active' : ''}" @click="${() => this._activeView = 'whiteboard'}">
+               <svg viewBox="0 0 24 24"><path fill="currentColor" d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z"/></svg>
+               <span>Notes</span>
             </button>
             <button class="nav-btn ${this._activeView === 'chores' ? 'active' : ''}" @click="${() => this._activeView = 'chores'}">
                <svg viewBox="0 0 24 24"><path fill="currentColor" d="M9,20.42L2.79,14.21L5.62,11.38L9,14.77L18.88,4.88L21.71,7.71L9,20.42Z"/></svg>
@@ -279,7 +287,7 @@ class NightlightDashboard extends LitElement {
           </header>
 
           <section class="content-area">
-            ${this._activeView === 'calendar' ? this._renderCalendarView() : this._renderChoreDashboard()}
+            ${this._renderActiveModule()}
           </section>
         </main>
 
@@ -288,6 +296,42 @@ class NightlightDashboard extends LitElement {
         <button class="fab" @click="${() => this._showAddModal = true}">+</button>
       </div>
     `;
+  }
+  
+  _renderActiveModule() {
+    switch(this._activeView) {
+      case 'meals': return this._renderMealPlanner();
+      case 'whiteboard': return this._renderWhiteboard();
+      case 'chores': return this._renderChoreDashboard();
+      default: return this._renderCalendarView();
+    }
+  }
+  
+  _renderMealPlanner() {
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    return html`
+      <div class="meal-grid-view">
+        ${days.map(day => html`
+          <div class="meal-card-item">
+            <div class="meal-day-label">${day}</div>
+            <textarea placeholder="What's for dinner?" @change="${(e) => this._saveMealState(day, e.target.value)}"></textarea>
+          </div>
+        `)}
+      </div>`;
+  }
+
+  _renderWhiteboard() {
+    return html`
+      <div class="whiteboard-container">
+        <div class="whiteboard-header">Family Whiteboard</div>
+        <textarea placeholder="Tap here to write notes for the family..."></textarea>
+      </div>`;
+  }
+
+  _saveMealState(day, value) {
+     // Implementation for saving to HA helpers like input_text.dinner_monday
+     // Requires input_text entities to be mapped in config
+     console.log(`Saving ${value} for ${day}`);
   }
 
   _renderCalendarView() {
@@ -473,7 +517,8 @@ class NightlightDashboard extends LitElement {
     return css`
       :host { --accent: #7b61ff; --bg: #fdfdfd; --card: #fff; --text: #1a1a1b; --border: #eee; }
       .nightlight-hub.dark { --bg: #121212; --card: #1e1e1e; --text: #efefef; --border: #333; }
-      .nightlight-hub { display: grid; grid-template-columns: 100px 1fr; height: calc(100vh - 64px); background: var(--bg); color: var(--text); font-family: sans-serif; overflow: hidden; }
+      .nightlight-hub { display: grid; grid-template-columns: 100px 1fr; height: 100vh; background: var(--bg); color: var(--text); font-family: sans-serif; overflow: hidden; position: fixed; top: 0; left: 0; width: 100vw; z-index: 9999; }
+      
       .side-rail { background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 30px 0; z-index: 20; }
       .logo-area { color: var(--accent); margin-bottom: 40px; width: 35px; }
       .nav-btn { background: none; border: none; padding: 20px 0; color: #bbb; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 5px; font-weight: bold; width: 100%; }
@@ -565,30 +610,76 @@ class NightlightDashboard extends LitElement {
       .btn-save { flex: 1; padding: 25px; border: none; background: var(--accent); color: #fff; font-weight: 800; cursor: pointer; }
 
       .fab { position: fixed; bottom: 40px; right: 40px; width: 85px; height: 85px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 3.5rem; cursor: pointer; box-shadow: 0 10px 25px rgba(123, 97, 255, 0.4); z-index: 100; }
+    
+    /* New View Containers */
+      .meal-grid-view { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; height: 100%; overflow-y: auto; padding: 10px; }
+      .meal-card-item { background: var(--card); border-radius: 20px; border: 1px solid var(--border); padding: 25px; display: flex; flex-direction: column; }
+      .meal-day-label { font-size: 1.6rem; font-weight: 900; color: var(--accent); margin-bottom: 15px; }
+      .meal-card-item textarea { flex-grow: 1; border: none; resize: none; font-size: 1.2rem; background: transparent; color: var(--text); outline: none; }
+
+      .whiteboard-container { height: 100%; display: flex; flex-direction: column; background: #fffcf0; border-radius: 30px; padding: 50px; border: 2px dashed #f0e68c; }
+      .whiteboard-header { font-size: 2.5rem; font-weight: 900; margin-bottom: 30px; color: #8b4513; font-family: 'Comic Sans MS', cursive; }
+      .whiteboard-container textarea { flex-grow: 1; border: none; background: transparent; font-size: 2rem; font-family: 'Comic Sans MS', cursive; outline: none; }
+      
+      /* Time Grid with Date-Above-AllDay */
+      .time-grid-root { display: flex; flex-direction: column; height: 100%; border: 1px solid var(--border); border-radius: 24px; overflow: hidden; background: var(--card); }
+      .header-row-locked { display: flex; border-bottom: 1px solid var(--border); background: var(--bg); flex-shrink: 0; height: 60px; }
+      .axis-placeholder { width: 70px; border-right: 1px solid var(--border); }
+      .date-grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; }
+      .header-cell { display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 1rem; border-right: 1px solid var(--border); }
     `;
   }
 }
 
 // --- Visual Editor Sub-Class ---
+// --- PRIORITY v1.1.8 VISUAL EDITOR UPGRADE ---
 class NightlightCardEditor extends LitElement {
   static get properties() { return { hass: {}, _config: {} }; }
   setConfig(config) { this._config = config; }
+
   _valueChanged(ev) {
+    if (!this._config || !this.hass) return;
     const target = ev.target;
     const newConfig = { ...this._config, [target.configValue]: target.value };
     this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: newConfig }, bubbles: true, composed: true }));
   }
+
   render() {
     if (!this.hass || !this._config) return html``;
     return html`
-      <div style="display:flex; flex-direction:column; gap:15px">
-        <ha-textfield label="Dashboard Title" .value="${this._config.title}" .configValue="${'title'}" @input="${this._valueChanged}"></ha-textfield>
-        <ha-select label="Theme" .value="${this._config.theme}" .configValue="${'theme'}" @selected="${this._valueChanged}">
-            <mwc-list-item value="light">Skylight Light</mwc-list-item>
-            <mwc-list-item value="dark">Nightlight Dark</mwc-list-item>
-        </ha-select>
-        <p style="color:#888; font-size:0.8rem">Entity personas and colors must be mapped in YAML.</p>
+      <div class="editor-shell">
+        <ha-expansion-panel header="Core Hub Settings" outlined>
+          <ha-textfield label="Dashboard Title" .value="${this._config.title}" .configValue="${'title'}" @input="${this._valueChanged}"></ha-textfield>
+          <ha-select label="Theme Selection" .value="${this._config.theme}" .configValue="${'theme'}" @selected="${this._valueChanged}">
+              <mwc-list-item value="light">Skylight Light</mwc-list-item>
+              <mwc-list-item value="dark">Nightlight Dark</mwc-list-item>
+          </ha-select>
+        </ha-expansion-panel>
+
+        <ha-expansion-panel header="Entity & Persona Management" outlined>
+          <p>Manage colors and icons for your calendars here.</p>
+          <ha-entities-picker .hass="${this.hass}" .value="${this._config.entities.map(e => e.entity)}" @value-changed="${(e) => this._entitiesChanged(e)}"></ha-entities-picker>
+        </ha-expansion-panel>
+
+        <ha-expansion-panel header="Feature Toggles" outlined>
+          <ha-formfield label="Show Chores">
+            <ha-switch .checked="${this._config.show_chores !== false}" .configValue="${'show_chores'}" @change="${this._valueChanged}"></ha-switch>
+          </ha-formfield>
+        </ha-expansion-panel>
       </div>`;
+  }
+
+  _entitiesChanged(ev) {
+    const entities = ev.detail.value.map(ent => ({ entity: ent, color: '#7b61ff' }));
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, entities } }, bubbles: true, composed: true }));
+  }
+
+  static get styles() {
+    return css`
+      .editor-shell { display: flex; flex-direction: column; gap: 15px; }
+      ha-expansion-panel { margin-bottom: 10px; }
+      ha-textfield, ha-select { width: 100%; margin-top: 10px; }
+    `;
   }
 }
 
