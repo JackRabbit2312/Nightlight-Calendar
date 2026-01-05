@@ -1,7 +1,7 @@
 /**
- * Nightlight Dashboard (v1.0.5)
- * Senior Dev Lead: Rick P. | Master Component
- * Features: Dark Mode, Month/Week/Day/Agenda Views, Event Details, Persona Filtering
+ * Nightlight Dashboard (v1.0.6)
+ * Senior Dev Lead: Rick P. | Melbourne
+ * Features: Dark Mode, Persona Filtering, Modal Fix, Dynamic Day Navigation
  */
 
 import {
@@ -80,7 +80,6 @@ class NightlightDashboard extends LitElement {
       end.setHours(23,59,59,999);
     }
 
-    // FIX: ISO String format for HA API (removes milliseconds)
     const startStr = start.toISOString().split('.')[0] + "Z";
     const endStr = end.toISOString().split('.')[0] + "Z";
 
@@ -98,7 +97,7 @@ class NightlightDashboard extends LitElement {
     this._events = results.flat();
   }
 
-  // --- UI Interactions ---
+  // --- Interaction Logic ---
 
   _navigate(dir) {
     const d = new Date(this._referenceDate);
@@ -113,7 +112,25 @@ class NightlightDashboard extends LitElement {
       this._activeCalendars.filter(i => i !== id) : [...this._activeCalendars, id];
   }
 
-  // --- Rendering Engines ---
+  _handleMonthDayClick(dayNum, evsCount) {
+    if (!dayNum) return;
+    const newDate = new Date(this._referenceDate);
+    newDate.setDate(dayNum);
+    this._referenceDate = newDate;
+
+    // v1.0.6: If > 2 events, auto-switch to Day mode for density
+    if (evsCount > 2) {
+      this._calendarMode = 'day';
+    }
+  }
+
+  _sanitize(text) {
+    const div = document.createElement('div');
+    div.textContent = text || 'No details provided.';
+    return div.innerHTML;
+  }
+
+  // --- Rendering ---
 
   render() {
     if (!this.hass) return html``;
@@ -134,10 +151,6 @@ class NightlightDashboard extends LitElement {
               <h1>${this.config.title}</h1>
               <div class="meta-row">
                 <span class="clock">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                <div class="meal-tag" @click="${() => { this._calendarMode = 'day'; this._referenceDate = new Date(); }}">
-                  <ha-icon icon="mdi:silverware-fork-knife"></ha-icon>
-                  <span>Dinner: ${this.hass.states[this.config.meal_entity]?.state || 'Plan a meal'}</span>
-                </div>
                 <div class="nav-arrows">
                   <button @click="${() => this._navigate(-1)}">❮</button>
                   <button @click="${() => this._navigate(1)}">❯</button>
@@ -170,7 +183,7 @@ class NightlightDashboard extends LitElement {
         </main>
 
         ${this._selectedEvent ? this._renderModal() : ''}
-        <button class="fab">+</button>
+        <button class="fab" @click="${() => alert('Event Creation API v1.1 pending')}">+</button>
       </div>
     `;
   }
@@ -196,14 +209,17 @@ class NightlightDashboard extends LitElement {
           ${days.map(d => {
             const evs = this._events.filter(e => d.cur && new Date(e.start.dateTime || e.start.date).getDate() === d.n && this._activeCalendars.includes(e.origin));
             return html`
-              <div class="day-cell ${!d.cur ? 'empty' : ''} ${this._isToday(d.n) ? 'today' : ''}">
+              <div class="day-cell ${!d.cur ? 'empty' : ''} ${this._isToday(d.n) ? 'today' : ''}" 
+                   @click="${() => this._handleMonthDayClick(d.n, evs.length)}">
                 <span class="day-num">${d.n}</span>
                 <div class="ev-list">
                   ${evs.slice(0, 4).map(e => html`
-                    <div class="ev-pill" style="border-left: 4px solid ${e.color}; background:${e.color}15; color:${e.color}" @click="${() => this._selectedEvent = e}">
+                    <div class="ev-pill" style="border-left: 4px solid ${e.color}; background:${e.color}15; color:${e.color}" 
+                         @click="${(ev) => { ev.stopPropagation(); this._selectedEvent = e; }}">
                       ${e.summary}
                     </div>
                   `)}
+                  ${evs.length > 4 ? html`<div class="more-indicator">+${evs.length - 4} more</div>` : ''}
                 </div>
               </div>`;
           })}
@@ -250,7 +266,7 @@ class NightlightDashboard extends LitElement {
 
     return html`
       <div class="agenda-container">
-        ${activeEvs.map(e => html`
+        ${activeEvs.length === 0 ? html`<div class="empty-msg">No events scheduled.</div>` : activeEvs.map(e => html`
           <div class="agenda-card" @click="${() => this._selectedEvent = e}">
             <div class="ag-date">
               <span class="d">${new Date(e.start.dateTime || e.start.date).getDate()}</span>
@@ -273,17 +289,18 @@ class NightlightDashboard extends LitElement {
             <h2>${this._selectedEvent.summary}</h2>
           </div>
           <div class="modal-content">
-            <p><strong>Date:</strong> ${new Date(this._selectedEvent.start.dateTime || this._selectedEvent.start.date).toLocaleString()}</p>
-            <p><strong>Source:</strong> ${this._selectedEvent.friendly_name}</p>
+            <p><strong>Time:</strong> ${new Date(this._selectedEvent.start.dateTime || this._selectedEvent.start.date).toLocaleString()}</p>
+            <p><strong>Calendar:</strong> ${this._selectedEvent.friendly_name}</p>
             <hr>
-            <div class="description">${document.createElement('div').tap(d => d.textContent = this._selectedEvent.description || 'No notes.').innerHTML}</div>
+            <div class="description" .innerHTML="${this._sanitize(this._selectedEvent.description)}"></div>
           </div>
           <button class="close-btn" @click="${() => this._selectedEvent = null}">Back to Dashboard</button>
         </div>
       </div>`;
   }
 
-  // --- Helpers ---
+  // --- Utility ---
+
   _getTimeStyles(e) {
     if (!e.start.dateTime) return `display:none`;
     const s = new Date(e.start.dateTime), end = new Date(e.end.dateTime);
@@ -292,7 +309,12 @@ class NightlightDashboard extends LitElement {
     return `top:${top}px;height:${height}px`;
   }
 
-  _isToday(n) { const t = new Date(); return n === t.getDate() && this._referenceDate.getMonth() === t.getMonth(); }
+  _isToday(n) { 
+    const t = new Date(); 
+    return n === t.getDate() && 
+           this._referenceDate.getMonth() === t.getMonth() && 
+           this._referenceDate.getFullYear() === t.getFullYear(); 
+  }
 
   _fragmentEvents(events) {
     const res = [];
@@ -344,11 +366,12 @@ class NightlightDashboard extends LitElement {
       .month-wrapper { height: 100%; display: flex; flex-direction: column; }
       .labels-row { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; color: #bbb; font-weight: 800; font-size: 0.9rem; padding-bottom: 15px; }
       .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(6, 1fr); gap: 12px; flex-grow: 1; height: 0; }
-      .day-cell { background: var(--card); border: 2px solid var(--border); border-radius: 20px; padding: 15px; overflow: hidden; }
+      .day-cell { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 15px; overflow: hidden; cursor: pointer; }
       .day-cell.today { border-color: var(--accent); border-width: 3px; }
-      .day-cell.empty { opacity: 0.2; background: rgba(0,0,0,0.02); }
+      .day-cell.empty { opacity: 0.1; background: rgba(0,0,0,0.02); }
       .day-num { font-weight: 900; font-size: 1.4rem; display: block; margin-bottom: 10px; }
       .ev-pill { margin-top: 4px; padding: 6px 10px; border-radius: 8px; font-size: 0.85rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+      .more-indicator { font-size: 0.75rem; color: #888; font-weight: 800; margin-top: 5px; }
 
       .time-grid-container { display: flex; height: 100%; border: 1px solid var(--border); border-radius: 30px; overflow: hidden; background: var(--card); }
       .time-sidebar { width: 85px; border-right: 1px solid var(--border); background: var(--bg); flex-shrink: 0; position: sticky; left: 0; z-index: 10; }
@@ -382,7 +405,7 @@ class NightlightDashboard extends LitElement {
   }
 }
 
-// --- VISUAL EDITOR ENGINE ---
+// --- VISUAL EDITOR ---
 class NightlightCardEditor extends LitElement {
   static get properties() { return { hass: {}, _config: {} }; }
   setConfig(config) { this._config = config; }
@@ -410,5 +433,5 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "nightlight-calendar-card",
   name: "Nightlight Ultimate Hub",
-  description: "Complete family dashboard solution with dark mode and multi-view support."
+  description: "Complete family dashboard solution with dynamic interaction and dark mode."
 });
