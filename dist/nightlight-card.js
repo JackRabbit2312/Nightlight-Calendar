@@ -855,7 +855,7 @@ class NightlightCardEditor extends LitElement {
         </ha-expansion-panel>
 
         <ha-expansion-panel header="Persona Styling" outlined>
-          <ha-entities-picker .hass="${this.hass}" .includeDomains="${['calendar']}" .value="${this._config.entities?.map(e => e.entity) || []}" @value-changed="${this._entitiesChanged}"></ha-entities-picker>
+          <ha-entities-picker .hass="${this.hass}" .includeDomains="${['input_boolean', 'switch', 'light', 'binary_sensor']}" .value="${this._config.entities?.map(e => e.entity) || []}" @value-changed="${this._entitiesChanged}"></ha-entities-picker>
           ${(this._config.entities || []).map((ent, idx) => html`
             <div class="persona-row">
               <div class="persona-header">
