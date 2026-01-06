@@ -568,7 +568,7 @@ class NightlightDashboard extends LitElement {
 
   static get styles() {
     return css`
-      :host { --accent: #7b61ff; --bg: #fdfdfd; --card: #fff; --text: #1a1a1b; --border: #eee; --gold: #ffd700; }
+      :host {  --accent: #7b61ff;  --bg: var(--primary-background-color);  --card: var(--card-background-color);  --text: var(--primary-text-color);  --secondary-text: var(--secondary-text-color); --border: var(--divider-color); --gold: #ffd700; }
       .nightlight-hub.dark { --bg: #121212; --card: #1e1e1e; --text: #efefef; --border: #333; }
       .nightlight-hub { display: grid; grid-template-columns: 100px 1fr; height: calc(100vh - 100px); background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; border-radius: 20px; margin: 10px; }
       .nightlight-hub.dark .modal-body {background: var(--card);color: var(--text);}
@@ -855,7 +855,7 @@ class NightlightCardEditor extends LitElement {
         </ha-expansion-panel>
 
         <ha-expansion-panel header="Persona Styling" outlined>
-          <ha-entities-picker .hass="${this.hass}" .includeDomains="${['calendar']}" .value="${this._config.entities?.map(e => e.entity) || []}" @value-changed="${this._entitiesChanged}"></ha-entities-picker>
+          <ha-entity-picker  .hass="${this.hass}"  .value="${item.entity}"  label="Helper Entity".includeDomains="${['input_boolean', 'switch', 'light', 'binary_sensor']}"  @value-changed="${e => this._choreItemChanged(kIdx, originalIdx, 'entity', e.detail.value)}" allow-custom-entity></ha-entity-picker>
           ${(this._config.entities || []).map((ent, idx) => html`
             <div class="persona-row">
               <div class="persona-header">
@@ -878,7 +878,9 @@ class NightlightCardEditor extends LitElement {
     return css`
       .editor-shell { display: flex; flex-direction: column; gap: 12px; padding: 10px; }
       ha-expansion-panel { background: var(--secondary-background-color); border-radius: 12px; margin-bottom: 10px; }
-      ha-textfield, ha-select, ha-entity-picker, ha-entities-picker { width: 100%; margin-top: 8px; }
+      ha-textfield, ha-select, ha-entity-picker {--mdc-theme-text-primary-on-background: var(--text); --mdc-theme-text-secondary-on-background: var(--secondary-text); --mdc-theme-primary: var(--accent);}
+      ha-icon-button { display: flex; align-items: center;justify-content: center;}
+      ha-icon-button ha-icon { display: flex; align-items: center; justify-content: center;height: 100%;}
       
       .period-header { display: grid; grid-template-columns: 80px 80px 1fr 40px; gap: 8px; font-size: 0.7rem; font-weight: bold; text-transform: uppercase; color: var(--secondary-text-color); margin-bottom: 4px; padding: 0 8px; }
       .period-row { display: grid; grid-template-columns: 80px 80px 1fr 40px; gap: 8px; align-items: center; background: rgba(0,0,0,0.03); padding: 8px; border-radius: 8px; margin-top: 4px; }
@@ -887,8 +889,9 @@ class NightlightCardEditor extends LitElement {
       .kid-header { display: flex; justify-content: space-between; align-items: center; }
       .period-group { margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.02); border-radius: 8px; border-left: 3px solid var(--accent-color); }
       .period-group-title { display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 0.85rem; }
-      .chore-row { display: grid; grid-template-columns: 1fr 1fr 40px; gap: 8px; align-items: center; margin-top: 8px; padding-bottom: 8px; }
-      
+      .chore-row {  display: flex;  flex-direction: column; /* Stack them on mobile/narrow view */gap: 10px;  padding: 12px;  background: rgba(0,0,0,0.03);border-radius: 8px; margin-top: 8px;}
+      @media (min-width: 400px) {.chore-row { display: grid;  grid-template-columns: 1fr 1.5fr 40px; /* Give more space to the picker */  align-items: center;}}
+
       .persona-row { padding: 12px; border-bottom: 1px solid var(--divider-color); }
       .persona-header { display: flex; justify-content: space-between; align-items: center; }
       .persona-row .controls { display: grid; grid-template-columns: 40px 1fr; gap: 15px; align-items: center; margin-top: 8px; }
