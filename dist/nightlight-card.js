@@ -318,7 +318,7 @@ class NightlightDashboard extends LitElement {
 
         ${this._selectedEvent ? this._renderModal() : ''}
         ${this._showAddModal ? this._renderAddModal() : ''}
-        <button class="fab" @click="${() => this._showAddModal = true}">+</button>
+        <button class="fab" @click="${() => { this._showAddModal = true; this.requestUpdate(); }}">+</button>
       </div>
     `;
   }
@@ -662,7 +662,10 @@ class NightlightDashboard extends LitElement {
       .close-btn { width: 100%; padding: 20px; border: none; background: var(--accent); color: #fff; font-weight: 900; cursor: pointer; }
       
       .fab { position: fixed; bottom: 40px; right: 40px; width: 85px; height: 85px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 3.5rem; cursor: pointer; box-shadow: 0 10px 25px rgba(123, 97, 255, 0.4); z-index: 100; }
-      
+      .form-grid {display: flex;  flex-direction: column;  gap: 15px;  padding-top: 10px;}
+      .full-width {  width: 100%;}      
+      .side-by-side { display: grid;  grid-template-columns: 1fr 1fr; gap: 10px;}
+
       /* Modernized Meal Planner */
       .meal-grid-view { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; height: 100%; overflow-y: auto; padding: 10px; }
       .meal-card-item { background: var(--card); border-radius: 24px; border: 1px solid var(--border); padding: 25px; display: flex; flex-direction: column; box-shadow: 0 4px 15px rgba(0,0,0,0.02); }
@@ -810,7 +813,7 @@ class NightlightCardEditor extends LitElement {
                 <ha-textfield placeholder="00:00" .value="${p.start}" @input="${e => this._periodChanged(idx, 'start', e.target.value)}"></ha-textfield>
                 <ha-textfield placeholder="00:00" .value="${p.end}" @input="${e => this._periodChanged(idx, 'end', e.target.value)}"></ha-textfield>
                 <ha-textfield placeholder="Name" .value="${p.name}" @input="${e => this._periodChanged(idx, 'name', e.target.value)}"></ha-textfield>
-                <ha-icon-button icon="mdi:delete" @click="${() => this._removePeriod(idx)}"></ha-icon-button>
+                <ha-icon-button @click="${() => this._removePeriod(idx)}"><ha-icon icon="mdi:delete"></ha-icon></ha-icon-button>
               </div>`)}
             <mwc-button class="mush-btn" @click="${this._addPeriod}">+ ADD TIME PERIOD</mwc-button>
           </div>
