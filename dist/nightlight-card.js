@@ -509,24 +509,26 @@ class NightlightDashboard extends LitElement {
 
     return html`
       <div class="chore-grid-locked">
-        ${this.config.chores.map((kid, kIndex) => html`
-          <div class="kid-chore-card">
-             <div class="kid-banner" style="background-image: url('${kid.image}')">
-                <h3>${kid.name}</h3>
-                ${this.hass.states[kid.all_done_helper]?.state === 'on' ? html`<ha-icon class="medal" icon="mdi:medal"></ha-icon>` : ''}
-             </div>
-             <div class="kid-list">
-                ${kid.items.map(item => {
-                  const state = this.hass.states[item.entity]?.state || 'off';
-                  return html`
-                    <div class="kid-item ${state === 'on' ? 'done' : ''}" @click="${() => this._toggleChore(item.entity, kIndex)}">
-                       <ha-icon icon="${state === 'on' ? 'mdi:check-circle' : 'mdi:circle-outline'}"></ha-icon>
-                       <span>${item.label}</span>
-                    </div>`;
-                })}
-             </div>
-          </div>
-        `)}
+        ${this.config.chores.map((kid, kIndex) => {
+          const allDone = kid.items.every(i => this.hass.states[i.entity]?.state === 'on');
+          return html`
+            <div class="kid-chore-card">
+               <div class="kid-banner" style="background-image: url('${kid.image}')">
+                  <h3>${kid.name}</h3>
+                  ${allDone ? html`<ha-icon class="medal" icon="mdi:medal"></ha-icon>` : ''}
+               </div>
+               <div class="kid-list">
+                  ${kid.items.map(item => {
+                    const state = this.hass.states[item.entity]?.state || 'off';
+                    return html`
+                      <div class="kid-item ${state === 'on' ? 'done' : ''}" @click="${() => this._toggleChore(item.entity, kIndex)}">
+                         <ha-icon icon="${state === 'on' ? 'mdi:check-circle' : 'mdi:circle-outline'}"></ha-icon>
+                         <span>${item.label}</span>
+                      </div>`;
+                  })}
+               </div>
+            </div>`;
+        })}
       </div>`;
   }
 
@@ -574,7 +576,7 @@ class NightlightDashboard extends LitElement {
 
   static get styles() {
     return css`
-      :host { --accent: #7b61ff; --bg: #fdfdfd; --card: #fff; --text: #1a1a1b; --border: #eee; }
+      :host { --accent: #7b61ff; --bg: #fdfdfd; --card: #fff; --text: #1a1a1b; --border: #eee; --gold: #ffd700; }
       .nightlight-hub.dark { --bg: #121212; --card: #1e1e1e; --text: #efefef; --border: #333; }
       .nightlight-hub { display: grid; grid-template-columns: 100px 1fr; height: calc(100vh - 100px); background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; border-radius: 20px; margin: 10px; }
       
@@ -633,16 +635,22 @@ class NightlightDashboard extends LitElement {
       .hour-box { height: 100px; border-bottom: 1px dotted var(--border); }
       .time-ev { position: absolute; left: 4px; right: 4px; padding: 10px; border-radius: 12px; color: #fff; font-size: 0.9rem; font-weight: 800; cursor: pointer; z-index: 2; }
 
-      /* Morning Chores Build 1.1.7 */
-      .chore-grid-locked { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; height: 100%; overflow-y: auto; }
-      .kid-chore-card { background: var(--card); border-radius: 24px; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.03); }
-      .kid-banner { height: 120px; background-size: cover; background-position: center; display: flex; align-items: flex-end; padding: 20px; color: #fff; position: relative; }
-      .kid-banner::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(transparent, rgba(0,0,0,0.6)); }
-      .kid-banner h3 { margin: 0; z-index: 1; font-size: 1.8rem; font-weight: 900; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
-      .kid-list { padding: 15px; }
-      .kid-item { display: flex; align-items: center; gap: 15px; padding: 12px; border-radius: 12px; cursor: pointer; color: #666; font-weight: 800; border: 1px solid transparent; transition: 0.2s; }
-      .kid-item.done { color: var(--accent); text-decoration: line-through; opacity: 0.6; background: rgba(123, 97, 255, 0.05); }
-      .kid-item ha-icon { --mdc-icon-size: 24px; }
+      /* --- Morning Chores Styles v1.2.1 --- */
+      .chore-grid-locked { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 25px; height: 100%; overflow-y: auto; padding-bottom: 20px; }
+      .kid-chore-card { background: var(--card); border-radius: 28px; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.04); position: relative; }
+      .kid-banner { height: 140px; background-size: cover; background-position: center; display: flex; align-items: flex-end; padding: 25px; color: #fff; position: relative; }
+      .kid-banner::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(transparent, rgba(0,0,0,0.7)); }
+      .kid-banner h3 { margin: 0; z-index: 1; font-size: 2rem; font-weight: 900; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
+      
+      .medal { position: absolute; top: 20px; right: 20px; z-index: 2; --mdc-icon-size: 48px; color: var(--gold); filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.4)); animation: bounce 1s infinite alternate; }
+      @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-5px); } }
+
+      .kid-list { padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+      .kid-item { display: flex; align-items: center; gap: 15px; padding: 16px; border-radius: 18px; cursor: pointer; color: #666; font-weight: 800; border: 1px solid transparent; transition: 0.2s; background: rgba(0,0,0,0.02); }
+      .kid-item.done { color: var(--accent); background: rgba(123, 97, 255, 0.08); opacity: 0.8; }
+      .kid-item ha-icon { --mdc-icon-size: 28px; }
+
+      .chore-lock-msg { height: 100%; display: flex; flex-direction: center; align-items: center; justify-content: center; text-align: center; color: #888; font-size: 1.4rem; font-weight: 700; gap: 20px; flex-direction: column; }
 
       /* Agenda Polishing */
       .agenda-view { height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
@@ -654,26 +662,16 @@ class NightlightDashboard extends LitElement {
       .agenda-card { flex-grow: 1; padding: 10px 20px; }
       .ag-title { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.5px; }
       .ag-meta { color: #888; font-weight: 600; margin-top: 4px; font-size: 0.9rem; }
-      .ag-sub { color: #888; font-weight: 600; font-size: 0.85rem; }
 
       .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(10px); }
       .modal-body { background: var(--card); width: 500px; border-radius: 32px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
-      .modal-body.creation { width: 600px; }
       .modal-header { padding: 30px; color: #fff; text-align: center; }
       .modal-content { padding: 30px; font-size: 1rem; line-height: 1.6; }
       .close-btn { width: 100%; padding: 20px; border: none; background: var(--accent); color: #fff; font-weight: 900; cursor: pointer; }
       
-      .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-      .full-width { grid-column: span 2; }
-      input, select { padding: 15px; border-radius: 12px; border: 2px solid var(--border); font-size: 1rem; font-weight: 600; background: var(--bg); color: var(--text); outline: none; }
-      label { display: block; font-weight: 800; color: #888; font-size: 0.8rem; text-transform: uppercase; margin-bottom: 5px; }
-      .modal-actions { display: flex; }
-      .btn-cancel { flex: 1; padding: 25px; border: none; background: #eee; font-weight: 800; cursor: pointer; }
-      .btn-save { flex: 1; padding: 25px; border: none; background: var(--accent); color: #fff; font-weight: 800; cursor: pointer; }
-
       .fab { position: fixed; bottom: 40px; right: 40px; width: 85px; height: 85px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 3.5rem; cursor: pointer; box-shadow: 0 10px 25px rgba(123, 97, 255, 0.4); z-index: 100; }
-    
-    /* Modernized Meal Planner */
+      
+      /* Modernized Meal Planner */
       .meal-grid-view { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; height: 100%; overflow-y: auto; padding: 10px; }
       .meal-card-item { background: var(--card); border-radius: 24px; border: 1px solid var(--border); padding: 25px; display: flex; flex-direction: column; box-shadow: 0 4px 15px rgba(0,0,0,0.02); }
       .meal-day-label { font-size: 1.4rem; font-weight: 900; color: var(--accent); margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }
@@ -682,21 +680,12 @@ class NightlightDashboard extends LitElement {
       /* Stylish Whiteboard */
       .whiteboard-container { height: 100%; display: flex; flex-direction: column; background: #fffcf0; border-radius: 32px; padding: 50px; border: 1px solid #f0e68c; box-shadow: inset 0 0 40px rgba(0,0,0,0.02); }
       .whiteboard-header { font-size: 2.2rem; font-weight: 900; margin-bottom: 30px; color: #444; letter-spacing: -1px; }
-      .whiteboard-container textarea { flex-grow: 1; border: none; background: transparent; font-size: 1.8rem; color: #1a1a1b !important; outline: none; font-weight: 500; line-height: 1.5;}
-      
+      .whiteboard-container textarea { flex-grow: 1; border: none; background: transparent; font-size: 1.8rem; color: #1a1a1b !important; outline: none; font-weight: 500; line-height: 1.5; }
       .nightlight-hub.dark .whiteboard-container { background: #2c2a1e; border-color: #444; }
       .nightlight-hub.dark .whiteboard-header { color: #eee; }
       .nightlight-hub.dark .whiteboard-container textarea { color: #efefef !important; }
-      
-      /* Time Grid with Date-Above-AllDay */
-      .time-grid-root { display: flex; flex-direction: column; height: 100%; border: 1px solid var(--border); border-radius: 24px; overflow: hidden; background: var(--card); }
-      .header-row-locked { display: flex; border-bottom: 1px solid var(--border); background: var(--bg); flex-shrink: 0; height: 60px; }
-      .axis-placeholder { width: 70px; border-right: 1px solid var(--border); }
-      .date-grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; }
-      .header-cell { display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 1rem; border-right: 1px solid var(--border); }
     `;
   }
-}
 
 // --- Visual Editor Sub-Class ---
 // --- PRIORITY v1.1.8 VISUAL EDITOR UPGRADE ---
@@ -714,27 +703,17 @@ class NightlightCardEditor extends LitElement {
   render() {
     if (!this.hass || !this._config) return html``;
     return html`
-      <div class="editor-shell">
-        <ha-expansion-panel header="Core Hub Settings" outlined>
-          <ha-textfield label="Dashboard Title" .value="${this._config.title}" .configValue="${'title'}" @input="${this._valueChanged}"></ha-textfield>
-          <ha-select label="Theme Selection" .value="${this._config.theme}" .configValue="${'theme'}" @selected="${this._valueChanged}">
-              <mwc-list-item value="light">Skylight Light</mwc-list-item>
-              <mwc-list-item value="dark">Nightlight Dark</mwc-list-item>
-          </ha-select>
-        </ha-expansion-panel>
-
-        <ha-expansion-panel header="Entity & Persona Management" outlined>
-          <p>Manage colors and icons for your calendars here.</p>
-          <ha-entities-picker .hass="${this.hass}" .value="${this._config.entities.map(e => e.entity)}" @value-changed="${(e) => this._entitiesChanged(e)}"></ha-entities-picker>
-        </ha-expansion-panel>
-
-        <ha-expansion-panel header="Feature Toggles" outlined>
-          <ha-formfield label="Show Chores">
-            <ha-switch .checked="${this._config.show_chores !== false}" .configValue="${'show_chores'}" @change="${this._valueChanged}"></ha-switch>
-          </ha-formfield>
-        </ha-expansion-panel>
+      <div style="display:flex; flex-direction:column; gap:15px">
+        <ha-textfield label="Dashboard Title" .value="${this._config.title}" .configValue="${'title'}" @input="${this._valueChanged}"></ha-textfield>
+        <ha-select label="Theme" .value="${this._config.theme}" .configValue="${'theme'}" @selected="${this._valueChanged}">
+            <mwc-list-item value="light">Skylight Light</mwc-list-item>
+            <mwc-list-item value="dark">Nightlight Dark</mwc-list-item>
+        </ha-select>
+        <h3>Family Management</h3>
+        <p>Use the YAML editor for advanced Chore item mapping and Banner image URLs.</p>
       </div>`;
   }
+
 
   _entitiesChanged(ev) {
     const entities = ev.detail.value.map(ent => ({ entity: ent, color: '#7b61ff' }));
