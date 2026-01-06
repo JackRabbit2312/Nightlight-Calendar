@@ -704,49 +704,63 @@ class NightlightCardEditor extends LitElement {
   _entitiesChanged(ev) {
     const newEntityList = ev.detail.value;
     const currentEntities = this._config.entities || [];
-    
-    // Logic: Map new selection while strictly preserving existing custom data (colors/pics)
     const entities = newEntityList.map(entId => {
       const existing = currentEntities.find(e => e.entity === entId);
       return existing ? { ...existing } : { entity: entId, color: '#7b61ff', picture: '' };
     });
-    
-    this.dispatchEvent(new CustomEvent("config-changed", { 
-      detail: { config: { ...this._config, entities } }, 
-      bubbles: true, 
-      composed: true 
-    }));
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, entities } }, bubbles: true, composed: true }));
   }
 
   _entityPropertyChanged(idx, prop, value) {
-    if (!this._config || !this.hass) return;
     const entities = JSON.parse(JSON.stringify(this._config.entities || []));
     if (!entities[idx]) return;
-    
     entities[idx][prop] = value;
-    
-    this.dispatchEvent(new CustomEvent("config-changed", { 
-      detail: { config: { ...this._config, entities } }, 
-      bubbles: true, 
-      composed: true 
-    }));
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, entities } }, bubbles: true, composed: true }));
   }
-  
+
   _moveEntity(idx, direction) {
-    if (!this._config?.entities) return;
-    const entities = [...this._config.entities];
+    const entities = [...(this._config.entities || [])];
     const newIdx = idx + direction;
-    
     if (newIdx < 0 || newIdx >= entities.length) return;
-    
-    // Swap logic for persona ordering
     [entities[idx], entities[newIdx]] = [entities[newIdx], entities[idx]];
-    
-    this.dispatchEvent(new CustomEvent("config-changed", { 
-      detail: { config: { ...this._config, entities } }, 
-      bubbles: true, 
-      composed: true 
-    }));
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, entities } }, bubbles: true, composed: true }));
+  }
+
+  // --- v1.2.8 Advanced Chores Visual Logic ---
+  _addKid() {
+    const chores = [...(this._config.chores || [])];
+    chores.push({ name: "New Child", image: "", all_done_helper: "", items: [] });
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, chores } }, bubbles: true, composed: true }));
+  }
+
+  _removeKid(idx) {
+    const chores = [...(this._config.chores || [])];
+    chores.splice(idx, 1);
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, chores } }, bubbles: true, composed: true }));
+  }
+
+  _kidPropertyChanged(idx, prop, value) {
+    const chores = JSON.parse(JSON.stringify(this._config.chores || []));
+    chores[idx][prop] = value;
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, chores } }, bubbles: true, composed: true }));
+  }
+
+  _addChoreItem(kidIdx) {
+    const chores = JSON.parse(JSON.stringify(this._config.chores || []));
+    chores[kidIdx].items.push({ entity: "", label: "New Task" });
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, chores } }, bubbles: true, composed: true }));
+  }
+
+  _removeChoreItem(kidIdx, itemIdx) {
+    const chores = JSON.parse(JSON.stringify(this._config.chores || []));
+    chores[kidIdx].items.splice(itemIdx, 1);
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, chores } }, bubbles: true, composed: true }));
+  }
+
+  _choreItemChanged(kidIdx, itemIdx, prop, value) {
+    const chores = JSON.parse(JSON.stringify(this._config.chores || []));
+    chores[kidIdx].items[itemIdx][prop] = value;
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, chores } }, bubbles: true, composed: true }));
   }
 
   render() {
@@ -755,57 +769,60 @@ class NightlightCardEditor extends LitElement {
       <div class="editor-shell">
         <ha-expansion-panel header="Core Hub Settings" outlined expanded>
           <ha-textfield label="Dashboard Title" .value="${this._config.title}" .configValue="${'title'}" @input="${this._valueChanged}"></ha-textfield>
-          <ha-select label="Theme Selection" .value="${this._config.theme}" .configValue="${'theme'}" @selected="${this._valueChanged}">
+          <ha-select label="Theme" .value="${this._config.theme}" .configValue="${'theme'}" @selected="${this._valueChanged}">
               <mwc-list-item value="light">Skylight Light</mwc-list-item>
               <mwc-list-item value="dark">Nightlight Dark</mwc-list-item>
           </ha-select>
-        </ha-expansion-panel>
-
-        <ha-expansion-panel header="Chore Window Settings" outlined>
           <div class="side-by-side">
-            <ha-textfield label="Visibility Start (HH:MM)" .value="${this._config.chore_start || '06:00'}" .configValue="${'chore_start'}" @input="${this._valueChanged}"></ha-textfield>
-            <ha-textfield label="Visibility End (HH:MM)" .value="${this._config.chore_end || '09:00'}" .configValue="${'chore_end'}" @input="${this._valueChanged}"></ha-textfield>
+            <ha-textfield label="Chore Start (HH:MM)" .value="${this._config.chore_start}" .configValue="${'chore_start'}" @input="${this._valueChanged}"></ha-textfield>
+            <ha-textfield label="Chore End (HH:MM)" .value="${this._config.chore_end}" .configValue="${'chore_end'}" @input="${this._valueChanged}"></ha-textfield>
           </div>
-          <p class="helper">Determines when the morning chore chart is active.</p>
         </ha-expansion-panel>
 
-        <ha-expansion-panel header="Calendar & Persona Management" outlined expanded>
-          <p>Add calendars and customize colors, pictures, and display order.</p>
-          <ha-entities-picker 
-            .hass="${this.hass}" 
-            .includeDomains="${['calendar']}"
-            .value="${this._config.entities?.map(e => e.entity) || []}" 
-            @value-changed="${this._entitiesChanged}">
-          </ha-entities-picker>
-          
-          <div class="entities-list">
+        <ha-expansion-panel header="Calendar & Persona Management" outlined>
+          <ha-entities-picker .hass="${this.hass}" .includeDomains="${['calendar']}" .value="${this._config.entities?.map(e => e.entity) || []}" @value-changed="${this._entitiesChanged}"></ha-entities-picker>
+          <div class="list-container">
             ${this._config.entities?.map((ent, idx) => html`
-              <div class="entity-config-row">
-                <div class="entity-header-actions">
-                  <div class="entity-id-label">
-                    <ha-icon icon="mdi:calendar-account"></ha-icon>
-                    <span>${ent.entity}</span>
-                  </div>
-                  <div class="order-btns">
-                    <ha-icon-button @click="${() => this._moveEntity(idx, -1)}" .disabled="${idx === 0}">
-                      <ha-icon icon="mdi:arrow-up"></ha-icon>
-                    </ha-icon-button>
-                    <ha-icon-button @click="${() => this._moveEntity(idx, 1)}" .disabled="${idx === this._config.entities.length - 1}">
-                      <ha-icon icon="mdi:arrow-down"></ha-icon>
-                    </ha-icon-button>
+              <div class="row-item card-sub">
+                <div class="row-header">
+                  <span>${ent.entity}</span>
+                  <div class="row-actions">
+                    <ha-icon-button icon="mdi:arrow-up" @click="${() => this._moveEntity(idx, -1)}" .disabled="${idx === 0}"></ha-icon-button>
+                    <ha-icon-button icon="mdi:arrow-down" @click="${() => this._moveEntity(idx, 1)}" .disabled="${idx === this._config.entities.length - 1}"></ha-icon-button>
                   </div>
                 </div>
                 <div class="side-by-side">
-                  <ha-textfield label="HEX Color" .value="${ent.color || '#7b61ff'}" @input="${(e) => this._entityPropertyChanged(idx, 'color', e.target.value)}"></ha-textfield>
-                  <ha-textfield label="Picture URL" .value="${ent.picture || ''}" @input="${(e) => this._entityPropertyChanged(idx, 'picture', e.target.value)}"></ha-textfield>
+                  <ha-textfield label="Color" .value="${ent.color}" @input="${(e) => this._entityPropertyChanged(idx, 'color', e.target.value)}"></ha-textfield>
+                  <ha-textfield label="Image URL" .value="${ent.picture}" @input="${(e) => this._entityPropertyChanged(idx, 'picture', e.target.value)}"></ha-textfield>
                 </div>
-              </div>
-            `)}
+              </div>`)}
           </div>
         </ha-expansion-panel>
 
-        <ha-expansion-panel header="Advanced Chores (YAML View)" outlined>
-          <p>Visual Kid Management is planned for v1.3. For now, use the Code Editor to map items and banners.</p>
+        <ha-expansion-panel header="Advanced Chores (Kids & Tasks)" outlined>
+          <div class="list-container">
+            ${this._config.chores?.map((kid, kIdx) => html`
+              <div class="row-item kid-editor-box">
+                <div class="row-header">
+                  <ha-textfield label="Child Name" .value="${kid.name}" @input="${(e) => this._kidPropertyChanged(kIdx, 'name', e.target.value)}"></ha-textfield>
+                  <ha-icon-button icon="mdi:delete" @click="${() => this._removeKid(kIdx)}"></ha-icon-button>
+                </div>
+                <ha-textfield label="Banner Image URL" .value="${kid.image}" @input="${(e) => this._kidPropertyChanged(kIdx, 'image', e.target.value)}"></ha-textfield>
+                <ha-textfield label="Completion Switch (Optional)" .value="${kid.all_done_helper}" @input="${(e) => this._kidPropertyChanged(kIdx, 'all_done_helper', e.target.value)}"></ha-textfield>
+                
+                <div class="task-list">
+                  <strong>Tasks:</strong>
+                  ${kid.items?.map((item, iIdx) => html`
+                    <div class="task-row">
+                      <ha-textfield label="Task Name" .value="${item.label}" @input="${(e) => this._choreItemChanged(kIdx, iIdx, 'label', e.target.value)}"></ha-textfield>
+                      <ha-textfield label="Entity ID" .value="${item.entity}" @input="${(e) => this._choreItemChanged(kIdx, iIdx, 'entity', e.target.value)}"></ha-textfield>
+                      <ha-icon-button icon="mdi:close-circle" @click="${() => this._removeChoreItem(kIdx, iIdx)}"></ha-icon-button>
+                    </div>`)}
+                  <mwc-button @click="${() => this._addChoreItem(kIdx)}">+ Add Task</mwc-button>
+                </div>
+              </div>`)}
+            <mwc-button raised @click="${this._addKid}">+ Add Child</mwc-button>
+          </div>
         </ha-expansion-panel>
       </div>`;
   }
@@ -813,20 +830,20 @@ class NightlightCardEditor extends LitElement {
   static get styles() {
     return css`
       .editor-shell { display: flex; flex-direction: column; gap: 15px; padding: 10px; }
-      ha-expansion-panel { margin-bottom: 10px; background: var(--card-background-color); border-radius: 12px; }
-      ha-textfield, ha-select { width: 100%; margin-top: 10px; }
-      .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-      .helper { color: var(--secondary-text-color); font-size: 0.85rem; margin-top: 8px; }
+      ha-expansion-panel { margin-bottom: 8px; background: var(--secondary-background-color); border-radius: 8px; }
+      ha-textfield { width: 100%; margin-bottom: 8px; }
+      .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
       
-      .entities-list { margin-top: 15px; border-top: 1px solid var(--divider-color); padding-top: 5px; }
-      .entity-config-row { padding: 12px; border: 1px solid var(--divider-color); border-radius: 8px; margin-top: 12px; background: rgba(0,0,0,0.02); }
+      .list-container { margin-top: 10px; display: flex; flex-direction: column; gap: 12px; }
+      .row-item { padding: 12px; border: 1px solid var(--divider-color); border-radius: 8px; background: var(--card-background-color); }
+      .row-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
       
-      .entity-header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-      .entity-id-label { font-weight: bold; font-size: 0.85rem; display: flex; align-items: center; gap: 8px; color: var(--primary-text-color); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-      .entity-id-label ha-icon { --mdc-icon-size: 18px; color: var(--secondary-text-color); }
+      .kid-editor-box { border-left: 4px solid var(--accent-color); }
+      .task-list { margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.03); border-radius: 4px; }
+      .task-row { display: grid; grid-template-columns: 1fr 1fr 40px; gap: 5px; margin-top: 5px; align-items: center; }
       
-      .order-btns { display: flex; gap: 4px; }
-      .order-btns ha-icon-button { --mdc-icon-button-size: 28px; --mdc-icon-size: 18px; color: var(--secondary-text-color); }
+      ha-icon-button { --mdc-icon-button-size: 32px; --mdc-icon-size: 20px; }
+      mwc-button { margin-top: 10px; width: 100%; }
     `;
   }
 }
