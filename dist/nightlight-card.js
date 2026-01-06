@@ -559,7 +559,7 @@ class NightlightDashboard extends LitElement {
             </div>
           </div>
           <div class="modal-actions">
-             <mwc-button @click="${() => this._showAddModal = false}">Cancel</mwc-button>
+             <mwc-button @click="${() => { this._showAddModal = false; this.requestUpdate(); }}">Cancel</mwc-button>
              <mwc-button raised @click="${this._submitEvent}">Create Event</mwc-button>
           </div>
         </div>
@@ -571,7 +571,10 @@ class NightlightDashboard extends LitElement {
       :host { --accent: #7b61ff; --bg: #fdfdfd; --card: #fff; --text: #1a1a1b; --border: #eee; --gold: #ffd700; }
       .nightlight-hub.dark { --bg: #121212; --card: #1e1e1e; --text: #efefef; --border: #333; }
       .nightlight-hub { display: grid; grid-template-columns: 100px 1fr; height: calc(100vh - 100px); background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; border-radius: 20px; margin: 10px; }
-      
+      .nightlight-hub.dark .modal-body {background: var(--card);color: var(--text);}
+      .nightlight-hub.dark ha-textfield, 
+      .nightlight-hub.dark ha-select {--mdc-theme-text-primary-on-background: var(--text);}
+    
       .logo-area { color: var(--accent); margin-bottom: 40px; width: 35px; }
       .side-rail { background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 30px 0; z-index: 20; }
       .nav-btn { background: none; border: none; padding: 25px 0; color: #bbb; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; font-weight: bold; width: 100%; }
@@ -659,7 +662,9 @@ class NightlightDashboard extends LitElement {
       .modal-body { background: var(--card); width: 500px; border-radius: 32px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
       .modal-header { padding: 30px; color: #fff; text-align: center; }
       .modal-content { padding: 30px; font-size: 1rem; line-height: 1.6; }
+      .modal-actions {display: flex;justify-content: flex-end;gap: 15px;padding: 20px 30px;background: var(--card); /* Ensure buttons aren't transparent */border-top: 1px solid var(--border);}
       .close-btn { width: 100%; padding: 20px; border: none; background: var(--accent); color: #fff; font-weight: 900; cursor: pointer; }
+      ha-textfield, ha-select {display: block; margin-bottom: 5px;--mdc-theme-primary: var(--accent);}
       
       .fab { position: fixed; bottom: 40px; right: 40px; width: 85px; height: 85px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 3.5rem; cursor: pointer; box-shadow: 0 10px 25px rgba(123, 97, 255, 0.4); z-index: 100; }
       .form-grid {display: flex;  flex-direction: column;  gap: 15px;  padding-top: 10px;}
@@ -813,7 +818,7 @@ class NightlightCardEditor extends LitElement {
                 <ha-textfield placeholder="00:00" .value="${p.start}" @input="${e => this._periodChanged(idx, 'start', e.target.value)}"></ha-textfield>
                 <ha-textfield placeholder="00:00" .value="${p.end}" @input="${e => this._periodChanged(idx, 'end', e.target.value)}"></ha-textfield>
                 <ha-textfield placeholder="Name" .value="${p.name}" @input="${e => this._periodChanged(idx, 'name', e.target.value)}"></ha-textfield>
-                <ha-icon-button @click="${() => this._removePeriod(idx)}"><ha-icon icon="mdi:delete"></ha-icon></ha-icon-button>
+                <ha-icon-button @click="${() => this._removePeriod(idx)}"><ha-icon icon="mdi:close"></ha-icon></ha-icon-button>
               </div>`)}
             <mwc-button class="mush-btn" @click="${this._addPeriod}">+ ADD TIME PERIOD</mwc-button>
           </div>
@@ -824,12 +829,10 @@ class NightlightCardEditor extends LitElement {
             <div class="kid-box">
               <div class="kid-header">
                 <ha-textfield label="Child Name" .value="${kid.name}" @input="${e => this._kidPropertyChanged(kIdx, 'name', e.target.value)}"></ha-textfield>
-                <ha-icon-button icon="mdi:account-remove" @click="${() => this._removeKid(kIdx)}"></ha-icon-button>
+                <ha-icon-button icon="mdi:account-remove" @click="${() => this._removeKid(kIdx)}"><ha-icon icon="mdi:close"></ha-icon></ha-icon-button>
               </div>
               <ha-textfield label="Banner Image URL" .value="${kid.image || ''}" @input="${e => this._kidPropertyChanged(kIdx, 'image', e.target.value)}"></ha-textfield>
-              <ha-formfield label="Use Entity Image">
-                <ha-switch .checked="${kid.use_person_image}" @change="${e => this._kidPropertyChanged(kIdx, 'use_person_image', e.target.checked)}"></ha-switch>
-              </ha-formfield>
+              
 
               ${periods.map(p => html`
                 <div class="period-group">
@@ -843,7 +846,7 @@ class NightlightCardEditor extends LitElement {
                       <div class="chore-row">
                         <ha-textfield label="Task Label" .value="${item.label}" @input="${e => this._choreItemChanged(kIdx, originalIdx, 'label', e.target.value)}"></ha-textfield>
                         <ha-entity-picker .hass="${this.hass}" .value="${item.entity}" .includeDomains="${['input_boolean','switch','light']}" @value-changed="${e => this._choreItemChanged(kIdx, originalIdx, 'entity', e.detail.value)}"></ha-entity-picker>
-                        <ha-icon-button icon="mdi:close" @click="${() => this._removeChore(kIdx, originalIdx)}"></ha-icon-button>
+                        <ha-icon-button @click="${() => this._removeChore(kIdx, originalIdx)}"><ha-icon icon="mdi:close"></ha-icon></ha-icon-button>
                       </div>`;
                   })}
                 </div>`)}
@@ -858,8 +861,8 @@ class NightlightCardEditor extends LitElement {
               <div class="persona-header">
                 <strong>${ent.entity}</strong>
                 <div>
-                  <ha-icon-button icon="mdi:arrow-up" @click="${() => this._moveEntity(idx, -1)}" .disabled="${idx === 0}"></ha-icon-button>
-                  <ha-icon-button icon="mdi:arrow-down" @click="${() => this._moveEntity(idx, 1)}" .disabled="${idx === this._config.entities.length - 1}"></ha-icon-button>
+                  <ha-icon-button @click="${() => this._moveEntity(idx, -1)}" .disabled="${idx === 0}"><ha-icon icon="mdi:arrow-up"></ha-icon></ha-icon-button>
+                  <ha-icon-button @click="${() => this._moveEntity(idx, 1)}" .disabled="${idx === this._config.entities.length - 1}"><ha-icon icon="mdi:arrow-down"></ha-icon></ha-icon-button>
                 </div>
               </div>
               <div class="controls">
