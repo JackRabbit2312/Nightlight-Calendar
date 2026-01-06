@@ -862,12 +862,12 @@ class NightlightCardEditor extends LitElement {
                             .value="${item.label}" 
                             @input="${e => this._choreItemChanged(kIdx, originalIdx, 'label', e.target.value)}">
                           </ha-textfield>
-                          <ha-entity-picker 
+                          <ha-textfield 
                             .hass="${this.hass}" 
                             .value="${item.entity}" 
-                            .includeDomains="${['input_boolean','switch','light','binary_sensor']}" 
+                            .includeDomains="${['input_boolean']}" 
                             @value-changed="${e => this._choreItemChanged(kIdx, originalIdx, 'entity', e.detail.value)}">
-                          </ha-entity-picker>
+                          </ha-textfield>
                           <ha-icon-button @click="${() => this._removeChore(kIdx, originalIdx)}">
                             <ha-icon icon="mdi:close"></ha-icon>
                           </ha-icon-button>
@@ -966,4 +966,5 @@ window.customCards.push({
   type: "nightlight-calendar-card",
   name: "Nightlight Hub v1.3.1",
   description: "Add-on Architecture Alpha: Multi-file setup with Advanced Chores GUI."
+
 });
