@@ -729,6 +729,32 @@ class NightlightCardEditor extends LitElement {
     [entities[idx], entities[newIdx]] = [entities[newIdx], entities[idx]];
     this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, entities } }, bubbles: true, composed: true }));
   }
+  
+  // v1.4.0: Period Lifecycle
+  _addPeriod() {
+    const periods = [...(this._config.periods || [])];
+    periods.push({ name: "Morning", start: "06:00", end: "09:00" });
+    this._updateConfig({ periods });
+  }
+
+  _removePeriod(idx) {
+    const periods = [...(this._config.periods || [])];
+    periods.splice(idx, 1);
+    this._updateConfig({ periods });
+  }
+
+  _periodChanged(idx, field, value) {
+    const periods = JSON.parse(JSON.stringify(this._config.periods || []));
+    periods[idx][field] = value;
+    this._updateConfig({ periods });
+  }
+  
+  _addChoreToPeriod(kidIdx, periodName) {
+    const chores = JSON.parse(JSON.stringify(this._config.chores || []));
+    if (!chores[kidIdx].items) chores[kidIdx].items = [];
+    chores[kidIdx].items.push({ label: "New Task", entity: "", period: periodName });
+    this._updateConfig({ chores });
+  }
 
   // --- v1.2.8 Advanced Chores Visual Logic ---
   _addKid() {
@@ -749,17 +775,15 @@ class NightlightCardEditor extends LitElement {
     this._updateConfig({ chores });
   }
 
-  _addChoreItem(kidIdx) {
+  // v1.4.0: Nested Chore Management
+  _addChoreToPeriod(kidIdx, periodName) {
     const chores = JSON.parse(JSON.stringify(this._config.chores || []));
-    chores[kidIdx].items.push({ 
-      entity: "", 
-      label: "New Task", 
-      time: "07:00" // Default time association (Step 2)
-    });
+    if (!chores[kidIdx].items) chores[kidIdx].items = [];
+    chores[kidIdx].items.push({ label: "New Chore", entity: "", period: periodName });
     this._updateConfig({ chores });
   }
 
-  _removeChoreItem(kidIdx, itemIdx) {
+  _removeChore(kidIdx, itemIdx) {
     const chores = JSON.parse(JSON.stringify(this._config.chores || []));
     chores[kidIdx].items.splice(itemIdx, 1);
     this._updateConfig({ chores });
@@ -781,74 +805,70 @@ class NightlightCardEditor extends LitElement {
 
   render() {
     if (!this.hass || !this._config) return html``;
+    const periods = this._config.periods || [];
+    
     return html`
       <div class="editor-shell">
         <ha-expansion-panel header="Hub Branding" outlined expanded>
-          <ha-textfield label="Hub Title" .value="${this._config.title}" .configValue="${'title'}" @input="${this._valueChanged}"></ha-textfield>
-          <ha-select label="Theme" .value="${this._config.theme}" .configValue="${'theme'}" @selected="${this._valueChanged}">
-              <mwc-list-item value="light">Skylight Light</mwc-list-item>
-              <mwc-list-item value="dark">Nightlight Dark</mwc-list-item>
-          </ha-select>
+          <ha-textfield label="Title" .value="${this._config.title}" .configValue="${'title'}" @input="${this._valueChanged}"></ha-textfield>
         </ha-expansion-panel>
 
-        <ha-expansion-panel header="Advanced Chore Management" outlined>
-          <!-- Step 1: Global Times moved above child profiles -->
-          <div class="time-block-config">
-            <ha-textfield label="Daily Start (e.g. 06:00)" .value="${this._config.chore_start}" .configValue="${'chore_start'}" @input="${this._valueChanged}"></ha-textfield>
-            <ha-textfield label="Daily End (e.g. 09:00)" .value="${this._config.chore_end}" .configValue="${'chore_end'}" @input="${this._valueChanged}"></ha-textfield>
+        <ha-expansion-panel header="Chore Management" outlined expanded>
+          <!-- Step 1: 4-Column Period Table -->
+          <div class="period-header">
+            <div>Start</div><div>End</div><div>Period Name</div><div></div>
           </div>
-          
+          <div class="period-grid">
+            ${periods.map((p, idx) => html`
+              <div class="period-row">
+                <ha-textfield placeholder="00:00" .value="${p.start}" @input="${e => this._periodChanged(idx, 'start', e.target.value)}"></ha-textfield>
+                <ha-textfield placeholder="00:00" .value="${p.end}" @input="${e => this._periodChanged(idx, 'end', e.target.value)}"></ha-textfield>
+                <ha-textfield placeholder="Name" .value="${p.name}" @input="${e => this._periodChanged(idx, 'name', e.target.value)}"></ha-textfield>
+                <ha-icon-button class="del-btn" icon="mdi:delete" @click="${() => this._removePeriod(idx)}"></ha-icon-button>
+              </div>
+            `)}
+            <mwc-button class="mush-btn" @click="${this._addPeriod}">+ ADD TIME PERIOD</mwc-button>
+          </div>
+
+          <!-- Step 2: Child Sub-sections -->
           <div class="kid-manager">
-            ${this._config.chores?.map((kid, kIdx) => html`
+            ${(this._config.chores || []).map((kid, kIdx) => html`
               <div class="kid-config-card">
                 <div class="kid-header">
-                  <ha-textfield label="Child Name" .value="${kid.name}" @input="${(e) => this._kidPropertyChanged(kIdx, 'name', e.target.value)}"></ha-textfield>
-                  <ha-icon-button icon="mdi:delete-outline" @click="${() => this._removeKid(kIdx)}"></ha-icon-button>
+                  <ha-textfield label="Child Name" .value="${kid.name}" @input="${e => this._kidPropertyChanged(kIdx, 'name', e.target.value)}"></ha-textfield>
+                  <ha-icon-button class="del-btn" icon="mdi:account-remove" @click="${() => this._removeKid(kIdx)}"></ha-icon-button>
                 </div>
-                <!-- Step 3: Image field blank if undefined -->
-                <ha-textfield label="Banner Image URL" .value="${kid.image || ''}" @input="${(e) => this._kidPropertyChanged(kIdx, 'image', e.target.value)}"></ha-textfield>
                 
-                <div class="task-list">
-                  <strong>Morning Routine Tasks:</strong>
-                  ${kid.items?.map((item, iIdx) => html`
-                    <div class="task-entry">
-                      <div class="task-main">
-                        <ha-textfield label="Label" .value="${item.label}" @input="${(e) => this._choreItemChanged(kIdx, iIdx, 'label', e.target.value)}"></ha-textfield>
-                        <!-- Step 2: Time associated with chore -->
-                        <ha-textfield label="Time" type="time" .value="${item.time || '07:00'}" @input="${(e) => this._choreItemChanged(kIdx, iIdx, 'time', e.target.value)}"></ha-textfield>
+                <div class="kid-sub-section">
+                  <ha-textfield label="Background Image URL" .value="${kid.image || ''}" @input="${e => this._kidPropertyChanged(kIdx, 'image', e.target.value)}"></ha-textfield>
+                  
+                  <ha-formfield label="Use Person's Entity Image">
+                    <ha-switch .checked="${kid.use_person_image}" @change="${e => this._kidPropertyChanged(kIdx, 'use_person_image', e.target.checked)}"></ha-switch>
+                  </ha-formfield>
+
+                  <!-- Nested Periods & Chores -->
+                  ${periods.map(p => html`
+                    <div class="period-group">
+                      <div class="period-group-title">
+                        <span>${p.name} Chores</span>
+                        <ha-icon-button icon="mdi:plus-circle" @click="${() => this._addChoreToPeriod(kIdx, p.name)}"></ha-icon-button>
                       </div>
-                      <!-- Step 6: Entity Autocomplete Picker -->
-                      <ha-entity-picker
-                        .hass="${this.hass}"
-                        label="Chore Boolean Entity"
-                        .value="${item.entity}"
-                        .includeDomains="${['input_boolean', 'switch']}"
-                        @value-changed="${(e) => this._choreItemChanged(kIdx, iIdx, 'entity', e.detail.value)}">
-                      </ha-entity-picker>
-                      <!-- Step 7: Bin icon to delete line -->
-                      <ha-icon-button class="del-task" icon="mdi:close-circle-outline" @click="${() => this._removeChoreItem(kIdx, iIdx)}"></ha-icon-button>
+                      ${kid.items?.filter(i => i.period === p.name).map((item, iIdx) => {
+                        const originalIdx = kid.items.indexOf(item);
+                        return html`
+                          <div class="chore-item-row">
+                            <ha-textfield label="Chore Name" .value="${item.label}" @input="${e => this._choreItemChanged(kIdx, originalIdx, 'label', e.target.value)}"></ha-textfield>
+                            <ha-entity-picker .hass="${this.hass}" .value="${item.entity}" .includeDomains="${['input_boolean', 'switch']}" @value-changed="${e => this._choreItemChanged(kIdx, originalIdx, 'entity', e.detail.value)}"></ha-entity-picker>
+                            <ha-icon-button class="del-btn" icon="mdi:close" @click="${() => this._removeChore(kIdx, originalIdx)}"></ha-icon-button>
+                          </div>`;
+                      })}
                     </div>
                   `)}
-                  <mwc-button @click="${() => this._addChoreItem(kIdx)}">+ ADD TASK</mwc-button>
                 </div>
-              </div>`)}
-            <!-- Step 4: Real Button for Add Child -->
-            <mwc-button raised style="width:100%; margin-top:15px;" @click="${this._addKid}">+ ADD CHILD PROFILE</mwc-button>
-          </div>
-        </ha-expansion-panel>
-
-        <ha-expansion-panel header="Persona & Calendar Styling" outlined>
-          <ha-entities-picker .hass="${this.hass}" .includeDomains="${['calendar']}" .value="${this._config.entities?.map(e => e.entity) || []}" @value-changed="${this._entitiesChanged}"></ha-entities-picker>
-          <div class="persona-list">
-            ${this._config.entities?.map((ent, idx) => html`
-              <div class="persona-row">
-                <div class="persona-info"><strong>${ent.entity}</strong></div>
-                <div class="persona-controls">
-                  <!-- Step 5: Color wheel selector -->
-                  <input type="color" .value="${ent.color || '#7b61ff'}" @input="${(e) => this._entityPropertyChanged(idx, 'color', e.target.value)}">
-                  <ha-textfield label="Avatar URL" .value="${ent.picture || ''}" @input="${(e) => this._entityPropertyChanged(idx, 'picture', e.target.value)}"></ha-textfield>
-                </div>
-              </div>`)}
+              </div>
+            `)}
+            <!-- Step 4: Mushroom Add Child Button -->
+            <mwc-button raised class="mush-btn" @click="${this._addKid}">+ ADD CHILD PROFILE</mwc-button>
           </div>
         </ha-expansion-panel>
       </div>`;
@@ -856,32 +876,33 @@ class NightlightCardEditor extends LitElement {
 
     static get styles() {
     return css`
-      .editor-shell { display: flex; flex-direction: column; gap: 15px; padding: 10px; }
-      ha-expansion-panel { margin-bottom: 10px; background: var(--card-background-color); border-radius: 12px; }
-      ha-textfield, ha-select { width: 100%; margin-top: 10px; }
-      .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-      .helper { color: var(--secondary-text-color); font-size: 0.85rem; margin-top: 8px; }
-      ha-expansion-panel { margin-bottom: 8px; background: var(--secondary-background-color); border-radius: 8px; }
-      ha-textfield { width: 100%; margin-bottom: 8px; }
-      .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+      /* Visual Editor Overhaul v1.4.0 */
+      .editor-shell { display: flex; flex-direction: column; gap: 12px; padding: 10px; }
+      ha-expansion-panel { background: var(--secondary-background-color); border-radius: 12px; margin-bottom: 10px; }
       
-      .entities-list { margin-top: 15px; border-top: 1px solid var(--divider-color); padding-top: 5px; }
-      .entity-config-row { padding: 12px; border: 1px solid var(--divider-color); border-radius: 8px; margin-top: 12px; background: rgba(0,0,0,0.02); }
-      .list-container { margin-top: 10px; display: flex; flex-direction: column; gap: 12px; }
-      .row-item { padding: 12px; border: 1px solid var(--divider-color); border-radius: 8px; background: var(--card-background-color); }
-      .row-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
-      
-      .entity-header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-      .entity-id-label { font-weight: bold; font-size: 0.85rem; display: flex; align-items: center; gap: 8px; color: var(--primary-text-color); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-      .entity-id-label ha-icon { --mdc-icon-size: 18px; color: var(--secondary-text-color); }
-      .kid-editor-box { border-left: 4px solid var(--accent-color); }
-      .task-list { margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.03); border-radius: 4px; }
-      .task-row { display: grid; grid-template-columns: 1fr 1fr 40px; gap: 5px; margin-top: 5px; align-items: center; }
-      
-      .order-btns { display: flex; gap: 4px; }
-      .order-btns ha-icon-button { --mdc-icon-button-size: 28px; --mdc-icon-size: 18px; color: var(--secondary-text-color); }
-      ha-icon-button { --mdc-icon-button-size: 32px; --mdc-icon-size: 20px; }
-      mwc-button { margin-top: 10px; width: 100%; }
+      /* 4-Column Period Grid */
+      .period-grid { display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; }
+      .period-row { display: grid; grid-template-columns: 80px 80px 1fr 40px; gap: 8px; align-items: center; background: rgba(0,0,0,0.03); padding: 8px; border-radius: 8px; }
+      .period-header { display: grid; grid-template-columns: 80px 80px 1fr 40px; gap: 8px; padding: 0 8px; font-size: 0.7rem; font-weight: bold; text-transform: uppercase; color: var(--secondary-text-color); }
+
+      /* Child Configuration Cards */
+      .kid-config-card { padding: 15px; border: 1px solid var(--divider-color); border-radius: 12px; margin-top: 15px; background: var(--card-background-color); }
+      .kid-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+      .kid-sub-section { border-left: 2px solid var(--accent-color); padding-left: 15px; margin-top: 10px; }
+
+      /* Indented Period Groups */
+      .period-group { margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.02); border-radius: 8px; }
+      .period-group-title { font-size: 0.85rem; font-weight: 800; color: var(--accent-color); margin-bottom: 8px; display: flex; justify-content: space-between; }
+      .chore-item-row { display: grid; grid-template-columns: 1fr 1fr 40px; gap: 8px; align-items: center; margin-bottom: 5px; }
+
+      .del-btn { color: var(--error-color); --mdc-icon-size: 20px; }
+      .mush-btn { --mdc-theme-primary: var(--accent-color); width: 100%; margin-top: 10px; }
+
+      /* UI Elements */
+      .medal { position: absolute; top: 20px; right: 20px; z-index: 2; --mdc-icon-size: 48px; color: var(--gold); animation: bounce 1s infinite alternate; }
+      @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-5px); } }
+      .whiteboard-container { height: 100%; display: flex; flex-direction: column; background: #fffcf0; border-radius: 32px; padding: 50px; border: 1px solid #f0e68c; }
+      .meal-grid-view { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; height: 100%; overflow-y: auto; padding: 10px; }
     `;
   }
 }
