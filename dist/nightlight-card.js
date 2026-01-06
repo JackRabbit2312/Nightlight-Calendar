@@ -499,17 +499,41 @@ class NightlightDashboard extends LitElement {
   }
 
   _renderChoreDashboard() {
-    const now = new Date();
-    const timeStr = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
-    if (timeStr < this.config.chore_start || timeStr > this.config.chore_end) {
-      return html`<div class="chore-lock-msg">Chore tracking is only active between ${this.config.chore_start} and ${this.config.chore_end}.</div>`;
+    if (!this.config.chores || !this.config.periods) {
+      return html`<div>No chores or periods configured.</div>`;
     }
-    if (!this.config.chores) return html`<div>No chores configured. Add 'chores' to your YAML.</div>`;
+
+    const now = new Date();
+    const currentTime = now.getHours() * 60 + now.getMinutes();
+
+    // Find the active period based on the current time
+    const activePeriod = this.config.periods.find(p => {
+      const [startH, startM] = p.start.split(':').map(Number);
+      const [endH, endM] = p.end.split(':').map(Number);
+      const startTotal = startH * 60 + startM;
+      const endTotal = endH * 60 + endM;
+      return currentTime >= startTotal && currentTime <= endTotal;
+    });
+
+    if (!activePeriod) {
+      return html`
+        <div class="chore-lock-msg">
+          No active chore period right now. 
+          <br>Check back during scheduled times.
+        </div>`;
+    }
 
     return html`
       <div class="chore-grid-locked">
+        <div class="period-announcer">Active: ${activePeriod.name}</div>
         ${this.config.chores.map((kid, kIndex) => {
-          const allDone = kid.items.every(i => this.hass.states[i.entity]?.state === 'on');
+          // Filter tasks to ONLY show those matching the active period's name
+          const activeTasks = (kid.items || []).filter(i => i.period === activePeriod.name);
+          
+          if (activeTasks.length === 0) return html``;
+
+          const allDone = activeTasks.every(i => this.hass.states[i.entity]?.state === 'on');
+
           return html`
             <div class="kid-chore-card">
                <div class="kid-banner" style="background-image: url('${kid.image}')">
@@ -517,14 +541,12 @@ class NightlightDashboard extends LitElement {
                   ${allDone ? html`<ha-icon class="medal" icon="mdi:medal"></ha-icon>` : ''}
                </div>
                <div class="kid-list">
-                  ${kid.items.map(item => {
-                    const state = this.hass.states[item.entity]?.state || 'off';
-                    return html`
-                      <div class="kid-item ${state === 'on' ? 'done' : ''}" @click="${() => this._toggleChore(item.entity, kIndex)}">
-                         <ha-icon icon="${state === 'on' ? 'mdi:check-circle' : 'mdi:circle-outline'}"></ha-icon>
-                         <span>${item.label}</span>
-                      </div>`;
-                  })}
+                  ${activeTasks.map(item => html`
+                    <div class="kid-item ${this.hass.states[item.entity]?.state === 'on' ? 'done' : ''}" 
+                         @click="${() => this._toggleChore(item.entity, kIndex)}">
+                       <ha-icon icon="${this.hass.states[item.entity]?.state === 'on' ? 'mdi:check-circle' : 'mdi:circle-outline'}"></ha-icon>
+                       <span>${item.label}</span>
+                    </div>`)}
                </div>
             </div>`;
         })}
@@ -642,6 +664,7 @@ class NightlightDashboard extends LitElement {
       .kid-banner { height: 140px; background-size: cover; background-position: center; display: flex; align-items: flex-end; padding: 25px; color: #fff; position: relative; }
       .kid-banner::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(transparent, rgba(0,0,0,0.7)); }
       .kid-banner h3 { margin: 0; z-index: 1; font-size: 2rem; font-weight: 900; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
+      .period-announcer { grid-column: 1 / -1; text-align: center; font-weight: 900; text-transform: uppercase; letter-spacing: 2px;color: var(--accent); padding: 10px; background: rgba(123, 97, 255, 0.1); border-radius: 12px; margin-bottom: 20px;}
       
       .medal { position: absolute; top: 20px; right: 20px; z-index: 2; --mdc-icon-size: 48px; color: var(--gold); filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.4)); animation: bounce 1s infinite alternate; }
       @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-5px); } }
@@ -650,7 +673,7 @@ class NightlightDashboard extends LitElement {
       .kid-item { display: flex; align-items: center; gap: 15px; padding: 16px; border-radius: 18px; cursor: pointer; color: #666; font-weight: 800; border: 1px solid transparent; transition: 0.2s; background: rgba(0,0,0,0.02); }
       .kid-item.done { color: var(--accent); background: rgba(123, 97, 255, 0.08); opacity: 0.8; }
       .kid-item ha-icon { --mdc-icon-size: 28px; }
-      .chore-lock-msg { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #888; font-size: 1.4rem; font-weight: 700; gap: 20px; }
+      .chore-lock-msg {height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;color: var(--secondary-text-color); font-size: 1.5rem; font-weight: 700;}
       .chore-lock-msg::before { content: '🔒'; font-size: 4rem; }
       
       /* Agenda Polishing */
