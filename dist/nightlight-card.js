@@ -16,8 +16,8 @@ class NightlightDashboard extends LitElement {
     return {
       hass: { type: Object },
       config: { type: Object },
-      _activeView: { type: String },    // 'calendar' or 'chores'
-      _calendarMode: { type: String }, // 'month', 'week', 'day', 'agenda'
+      _activeView: { type: String },    // calendar, chores, meals, whiteboard
+      _calendarMode: { type: String }, // month, week, day, agenda
       _events: { type: Array },
       _loading: { type: Boolean },
       _referenceDate: { type: Object },
@@ -28,9 +28,8 @@ class NightlightDashboard extends LitElement {
     };
   }
 
-  // --- v1.0.7 PRIORITY VISUAL EDITOR REGISTRATION ---
   static getConfigElement() { return document.createElement("nightlight-card-editor"); }
-  static getStubConfig() { return { title: "Family Hub", theme: "light", entities: [] }; }
+  static getStubConfig() { return { title: "Family Hub", theme: "light", entities: [], chore_start: "06:00", chore_end: "09:00" }; }
 
   constructor() {
     super();
@@ -148,8 +147,7 @@ class NightlightDashboard extends LitElement {
   }
 
   _togglePersona(id) {
-    this._activeCalendars = this._activeCalendars.includes(id) ? 
-      this._activeCalendars.filter(i => i !== id) : [...this._activeCalendars, id];
+    this._activeCalendars = this._activeCalendars.includes(id) ? this._activeCalendars.filter(i => i !== id) : [...this._activeCalendars, id];
   }
 
   _toggleChore(entityId, kidIndex) {
@@ -157,7 +155,7 @@ class NightlightDashboard extends LitElement {
     const newState = currentState === 'on' ? 'off' : 'on';
     this.hass.callService('input_boolean', newState === 'on' ? 'turn_on' : 'turn_off', { entity_id: entityId });
     
-    // Check for "All Done" helper
+    // Check for "All Done" helper and medal logic
     const kid = this.config.chores[kidIndex];
     if (kid.all_done_helper) {
        setTimeout(() => {
@@ -252,8 +250,7 @@ class NightlightDashboard extends LitElement {
   render() {
     if (!this.hass) return html``;
     
-    // v1.1.8: Title Requirement - Always show Month/Year when in calendar view
-    const headerTitle = this._activeView === 'calendar'
+    const headerTitle = (this._activeView === 'calendar')
         ? this._referenceDate.toLocaleString('default', { month: 'long', year: 'numeric' })
         : this.config.title;
 
@@ -304,7 +301,7 @@ class NightlightDashboard extends LitElement {
               </div>
               <button class="today-btn" @click="${() => { this._referenceDate = new Date(); this._activeView = 'calendar'; }}">Today</button>
               <div class="persona-filters">
-                ${this.config.entities.filter(e => e.entity.startsWith('calendar')).map(ent => html`
+                ${this.config.entities?.filter(e => e.entity.startsWith('calendar')).map(ent => html`
                   <div class="persona ${this._activeCalendars.includes(ent.entity) ? 'active' : 'inactive'}" 
                        style="background: ${ent.color}" @click="${() => this._togglePersona(ent.entity)}">
                     ${ent.picture ? html`<img src="${ent.picture}">` : ent.entity.split('.')[1][0].toUpperCase()}
@@ -325,7 +322,7 @@ class NightlightDashboard extends LitElement {
       </div>
     `;
   }
-  
+
   _renderActiveModule() {
     switch(this._activeView) {
       case 'meals': return this._renderMealPlanner();
@@ -343,7 +340,7 @@ class NightlightDashboard extends LitElement {
           <div class="meal-card-item">
             <div class="meal-day-label">${day}</div>
             <textarea 
-              placeholder="Tap to plan..." 
+              placeholder="What's for dinner?" 
               .value="${this._getData('meal_' + day)}"
               @input="${(e) => this._saveData('meal_' + day, e.target.value)}"></textarea>
           </div>
@@ -469,7 +466,6 @@ class NightlightDashboard extends LitElement {
   _renderAgenda() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
     const fragmented = this._fragmentEvents(this._events);
     const interleaved = fragmented
       .filter(e => this._activeCalendars.includes(e.origin))
@@ -499,12 +495,9 @@ class NightlightDashboard extends LitElement {
   _renderChoreDashboard() {
     const now = new Date();
     const timeStr = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
-    
-    // Check time visibility
     if (timeStr < this.config.chore_start || timeStr > this.config.chore_end) {
       return html`<div class="chore-lock-msg">Chore tracking is only active between ${this.config.chore_start} and ${this.config.chore_end}.</div>`;
     }
-
     if (!this.config.chores) return html`<div>No chores configured. Add 'chores' to your YAML.</div>`;
 
     return html`
