@@ -700,13 +700,16 @@ class NightlightCardEditor extends LitElement {
   
   setConfig(config) {
     this._config = config;
-    
-    // This forces Home Assistant to load the entity picker components
-    const loadPicker = async () => {
-      const registry = await window.customElements.whenDefined("ha-entity-picker");
-      if (registry) this.requestUpdate();
+
+    // Force Home Assistant to load the internal entity picker component
+    const loadHAComponents = async () => {
+      if (!customElements.get("ha-entity-picker")) {
+        const cardHelpers = await window.loadCardHelpers();
+        await cardHelpers.createCardElement({ type: "entities" });
+      }
+      this.requestUpdate();
     };
-    loadPicker();
+    loadHAComponents();
   }
 
   _updateConfig(changes) {
@@ -867,12 +870,11 @@ class NightlightCardEditor extends LitElement {
                           <ha-textfield 
                             label="Task Label" 
                             .value="${item.label}" 
-                            .configValue="${'label'}"
                             @input="${e => this._choreItemChanged(kIdx, originalIdx, 'label', e.target.value)}">
                           </ha-textfield>
 
                           <ha-entity-picker
-                            label="Entity (Helper)"
+                            label="Linked Entity"
                             .hass="${this.hass}"
                             .value="${item.entity}"
                             .includeDomains="${['input_boolean', 'switch', 'light']}"
@@ -950,10 +952,10 @@ class NightlightCardEditor extends LitElement {
       .period-group { padding: 10px; background: var(--secondary-background-color); border-radius: 8px; border-left: 3px solid var(--accent-color, #7b61ff); display: flex; flex-direction: column; gap: 8px; }
       .period-group-title { display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 0.85rem; }
       
-      .chore-row { display: flex; flex-direction: column;gap: 12px; padding: 15px; background: var(--primary-background-color);border-radius: 8px; margin-top: 10px;border: 1px solid var(--divider-color);}
-      @media (min-width: 450px) { .chore-row {   display: grid;   grid-template-columns: 1fr 1fr 40px;align-items: end; }}
+      .chore-row { display: flex; flex-direction: column;gap: 12px; padding: 12px;background: var(--secondary-background-color); border-radius: 8px;  margin-top: 8px; border: 1px solid var(--divider-color);}
+      @media (min-width: 450px) { .chore-row {   display: grid;grid-template-columns: 1fr 1fr 40px;   align-items: center;  }}
       
-      ha-entity-picker { display: block; width: 100%;min-width: 150px; --mdc-theme-primary: var(--accent-color, #7b61ff);}
+      ha-entity-picker { display: block; width: 100%;min-height: 50px; --mdc-theme-primary: var(--accent-color, #7b61ff);}
 
       .persona-row { padding: 12px; border-bottom: 1px solid var(--divider-color); }
       .persona-header { display: flex; justify-content: space-between; align-items: center; }
