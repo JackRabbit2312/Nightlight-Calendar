@@ -57,29 +57,34 @@ class NightlightDashboard extends LitElement {
     if (this._activeCalendars.length === 0 && config.entities) {
       this._activeCalendars = config.entities.map(e => e.entity);
     }
-    // Check for Daily Reset
-    this._checkDailyReset();
+  
   }
 
   // --- Data Management & Lifecycle ---
 
   updated(changedProps) {
+    if (changedProps.has('hass')) {
+    this._checkDailyReset(); // Only runs when hass is available
+  }
     if (changedProps.has('hass') || changedProps.has('_activeView') || changedProps.has('_calendarMode') || changedProps.has('_referenceDate')) {
       this._refreshData();
     }
   }
 
   async _checkDailyReset() {
+    if (!this.hass || !this.config.chores) return; // Guard added
     const today = new Date().toDateString();
     if (this._lastResetDate !== today) {
       const allChoreEntities = this.config.chores?.flatMap(kid => kid.items.map(i => i.entity)) || [];
-      if (allChoreEntities.length > 0) {
-        await this.hass.callService('input_boolean', 'turn_off', { entity_id: allChoreEntities });
+      // Only call if there are actually entities to turn off
+      const validEntities = allChoreEntities.filter(ent => ent && this.hass.states[ent]);
+      if (validEntities.length > 0) {
+        await this.hass.callService('input_boolean', 'turn_off', { entity_id: validEntities });
         localStorage.setItem('nightlight_reset_date', today);
         this._lastResetDate = today;
       }
     }
-  }
+}
 
   async _refreshData() {
     if (!this.hass || this._loading) return;
@@ -114,8 +119,9 @@ class NightlightDashboard extends LitElement {
       end.setHours(23,59,59,999);
     }
 
-    const startStr = start.toISOString().split('.')[0] + "Z";
-    const endStr = end.toISOString().split('.')[0] + "Z";
+    // Replace your startStr/endStr lines with these:
+    const startStr = start.toISOString().replace(/\.\d+Z$/, "Z");
+    const endStr = end.toISOString().replace(/\.\d+Z$/, "Z");
 
     const promises = this.config.entities.filter(e => e.entity.startsWith('calendar')).map(ent => {
       return this.hass.callApi('GET', `calendars/${ent.entity}?start=${startStr}&end=${endStr}`)
@@ -848,14 +854,17 @@ class NightlightCardEditor extends LitElement {
                       </ha-icon-button>
                     </div>
                     ${kid.items?.filter(i => i.period === p.name).map((item, iIdx) => {
-                      const originalIdx = kid.items.indexOf(item);
+                      const originalIdx = kid.items.indexOf(item); // Correct way to find the index
                       return html`
                         <div class="chore-row">
-                          <ha-textfield label="Task Label" .value="${item.label}" @input="${e => this._choreItemChanged(kIdx, originalIdx, 'label', e.target.value)}"></ha-textfield>
+                          <ha-textfield 
+                            label="Task Label" 
+                            .value="${item.label}" 
+                            @input="${e => this._choreItemChanged(kIdx, originalIdx, 'label', e.target.value)}">
+                          </ha-textfield>
                           <ha-entity-picker 
                             .hass="${this.hass}" 
                             .value="${item.entity}" 
-                            label="Helper Entity"
                             .includeDomains="${['input_boolean','switch','light','binary_sensor']}" 
                             @value-changed="${e => this._choreItemChanged(kIdx, originalIdx, 'entity', e.detail.value)}">
                           </ha-entity-picker>
@@ -907,12 +916,23 @@ class NightlightCardEditor extends LitElement {
       ha-expansion-panel { background: var(--secondary-background-color); border-radius: 12px; margin-bottom: 10px; }
       .panel-content { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
       
-      ha-textfield, ha-select, ha-entity-picker, ha-entities-picker { 
+      ha-textfield, ha-select, ha-entity-picker {
+        display: block;
         width: 100%;
-        --mdc-theme-primary: var(--accent-color, #7b61ff);
+        margin-top: 8px;
+        /* Use HA theme variables for text colors */
+        --mdc-theme-text-primary-on-background: var(--primary-text-color);
+        --mdc-theme-text-secondary-on-background: var(--secondary-text-color);
+        --mdc-text-field-fill-color: var(--secondary-background-color);
+        --mdc-text-field-ink-color: var(--primary-text-color);
       }
       
-      ha-icon-button { display: flex; align-items: center; justify-content: center; }
+      ha-icon-button {
+        --mdc-icon-button-size: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
       ha-icon { --mdc-icon-size: 20px; }
 
       .period-header { display: grid; grid-template-columns: 80px 80px 1fr 40px; gap: 8px; font-size: 0.7rem; font-weight: bold; text-transform: uppercase; color: var(--secondary-text-color); padding: 0 8px; }
