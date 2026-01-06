@@ -23,7 +23,8 @@ class NightlightDashboard extends LitElement {
       _selectedEvent: { type: Object },
       _activeCalendars: { type: Array },
       _showAddModal: { type: Boolean },
-      _selectedCalendarId: { type: String }
+      _selectedCalendarId: { type: String },
+      _menuOpen: { type: Boolean }
     };
   }
 
@@ -42,6 +43,7 @@ class NightlightDashboard extends LitElement {
     this._showAddModal = false;
     this._selectedCalendarId = '';
     this._lastResetDate = localStorage.getItem('nightlight_reset_date');
+    this._menuOpen = false;
   }
 
   setConfig(config) {
@@ -279,27 +281,35 @@ class NightlightDashboard extends LitElement {
         : this.config.title;
 
     return html`
-      <div class="nightlight-hub ${this.config.theme}">
-        <nav class="side-rail">
+      <div class="nightlight-hub ${this.config.theme} ${this._menuOpen ? 'menu-visible' : ''}">
+        
+        <nav class="side-rail ${this._menuOpen ? 'open' : ''}">
+          <button class="menu-close-btn" @click="${() => this._menuOpen = false}">✕</button>
+          
           <a href="${this.config.logo_url || '/'}" class="logo-link">
             <div class="logo-area">
                <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12,3L2,12H5V20H19V12H22L12,3M12,8.5C13.5,8.5 15,10 15,11.5C15,13.2 12,16 12,16C12,16 9,13.2 9,11.5C9,10 10.5,8.5 12,8.5Z"/></svg>
             </div>
           </a>
+
           <div class="nav-items">
-            <button class="nav-btn ${this._activeView === 'calendar' ? 'active' : ''}" @click="${() => this._activeView = 'calendar'}">
+            <button class="nav-btn ${this._activeView === 'calendar' ? 'active' : ''}" 
+              @click="${() => { this._activeView = 'calendar'; this._menuOpen = false; }}">
                <ha-icon icon="mdi:calendar-month"></ha-icon>
                <span>Calendar</span>
             </button>
-            <button class="nav-btn ${this._activeView === 'meals' ? 'active' : ''}" @click="${() => this._activeView = 'meals'}">
+            <button class="nav-btn ${this._activeView === 'meals' ? 'active' : ''}" 
+              @click="${() => { this._activeView = 'meals'; this._menuOpen = false; }}">
                <ha-icon icon="mdi:silverware-fork-knife"></ha-icon>
                <span>Dinner</span>
             </button>
-            <button class="nav-btn ${this._activeView === 'whiteboard' ? 'active' : ''}" @click="${() => this._activeView = 'whiteboard'}">
+            <button class="nav-btn ${this._activeView === 'whiteboard' ? 'active' : ''}" 
+              @click="${() => { this._activeView = 'whiteboard'; this._menuOpen = false; }}">
                <ha-icon icon="mdi:note-edit"></ha-icon>
                <span>Notes</span>
             </button>
-            <button class="nav-btn ${this._activeView === 'chores' ? 'active' : ''}" @click="${() => this._activeView = 'chores'}">
+            <button class="nav-btn ${this._activeView === 'chores' ? 'active' : ''}" 
+              @click="${() => { this._activeView = 'chores'; this._menuOpen = false; }}">
                <ha-icon icon="mdi:check-all"></ha-icon>
                <span>Chores</span>
             </button>
@@ -309,6 +319,10 @@ class NightlightDashboard extends LitElement {
         <main class="main-stage">
           <header class="top-bar">
             <div class="left-info">
+              <ha-icon-button class="hamburger-menu" @click="${() => this._menuOpen = true}">
+                <ha-icon icon="mdi:menu"></ha-icon>
+              </ha-icon-button>
+
               <h1>${headerTitle}</h1>
               <div class="meta-row">
                 <span class="clock">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
@@ -347,7 +361,7 @@ class NightlightDashboard extends LitElement {
         <button class="fab" @click="${() => { this._showAddModal = true; this.requestUpdate(); }}">+</button>
       </div>
     `;
-  }
+}
 
   _renderActiveModule() {
     switch(this._activeView) {
@@ -524,6 +538,7 @@ class NightlightDashboard extends LitElement {
     const now = new Date();
     const currentTime = now.getHours() * 60 + now.getMinutes();
     const currentUser = this.hass.user.name;
+    const isDone = this._getTodoStatus(kid.todo_list, item.label);
 
     const activePeriod = this.config.periods.find(p => {
       const [startH, startM] = p.start.split(':').map(Number);
@@ -565,7 +580,7 @@ class NightlightDashboard extends LitElement {
                              }}">
                            <ha-icon 
                              icon="${isDone ? 'mdi:check-circle' : 'mdi:circle-outline'}"
-                             style="transition: color 0.3s ease;">
+                             class="chore-icon ${isDone ? 'is-completed' : ''}" style="transition: color 0.3s ease;">
                            </ha-icon>
                            <span>${item.label}</span>
                         </div>`;
@@ -631,6 +646,18 @@ class NightlightDashboard extends LitElement {
       .nav-btn.active { color: var(--accent); border-right: 4px solid var(--accent); background: rgba(123, 97, 255, 0.05); }
       .nav-btn ha-icon { --mdc-icon-size: 26px; }
       
+      /* Sidebar Sandwich Logic */
+      .hamburger-menu {  display: none; margin-right: 10px; }
+      .menu-close-btn {  display: none; background: none; border: none; color: var(--text); font-size: 1.5rem; position: absolute; top: 20px; right: 20px; }
+      
+      @media (max-width: 768px) { 
+        .nightlight-hub { grid-template-columns: 1fr; } 
+        .hamburger-menu { display: inline-block; }
+        .side-rail { position: fixed; left: -110px; top: 0; bottom: 0; width: 100px; z-index: 1000; transition: left 0.3s ease; box-shadow: 5px 0 15px rgba(0,0,0,0.2);  }
+        .side-rail.open { left: 0; }
+        .menu-close-btn { display: block; }
+        }
+      
       .main-stage { padding: 30px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; overflow: hidden; }
       .top-bar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; flex-shrink: 0; }
       .top-bar h1 { font-size: 2.4rem; font-weight: 800; margin: 0; letter-spacing: -1.2px; white-space: nowrap; }
@@ -680,6 +707,7 @@ class NightlightDashboard extends LitElement {
       .chore-container { display: flex; flex-direction: column; height: 100%; }
       .chore-grid-locked { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 25px; overflow-y: auto; padding-bottom: 20px; }
       .kid-chore-card { background: var(--card); border-radius: 28px; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.04); position: relative; }
+      .chore-icon.is-completed {  color: #34c759 !important;  transform: scale(1.15); }
       
       /* REFINED BANNER: Stretched image to fit */
       .kid-banner { height: 140px; background-size: 100% 100%; background-position: center; background-repeat: no-repeat; display: flex; align-items: flex-end; padding: 25px; color: #fff; position: relative; }
@@ -696,6 +724,7 @@ class NightlightDashboard extends LitElement {
       .kid-item { display: flex; align-items: center; gap: 15px; padding: 16px; border-radius: 18px; cursor: pointer; color: var(--text); font-weight: 800; border: 1px solid transparent; transition: 0.2s; background: rgba(0,0,0,0.02); }
       .kid-item:active { background: rgba(123, 97, 255, 0.15); transform: scale(0.96); }
       .kid-item.done { color: var(--accent); background: rgba(123, 97, 255, 0.08); opacity: 0.6; transform: scale(1.1); }
+      .kid-item.done span { text-decoration: line-through; color: var(--secondary-text-color); }
       .kid-item ha-icon { --mdc-icon-size: 28px; transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
       .chore-lock-msg {height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;color: var(--secondary-text-color); font-size: 1.5rem; font-weight: 700;}
       .chore-lock-msg::before { content: '🔒'; font-size: 4rem; }
@@ -994,5 +1023,6 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
