@@ -649,9 +649,9 @@ class NightlightDashboard extends LitElement {
       .kid-item { display: flex; align-items: center; gap: 15px; padding: 16px; border-radius: 18px; cursor: pointer; color: #666; font-weight: 800; border: 1px solid transparent; transition: 0.2s; background: rgba(0,0,0,0.02); }
       .kid-item.done { color: var(--accent); background: rgba(123, 97, 255, 0.08); opacity: 0.8; }
       .kid-item ha-icon { --mdc-icon-size: 28px; }
-
-      .chore-lock-msg { height: 100%; display: flex; flex-direction: center; align-items: center; justify-content: center; text-align: center; color: #888; font-size: 1.4rem; font-weight: 700; gap: 20px; flex-direction: column; }
-
+      .chore-lock-msg { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #888; font-size: 1.4rem; font-weight: 700; gap: 20px; }
+      .chore-lock-msg::before { content: '🔒'; font-size: 4rem; }
+      
       /* Agenda Polishing */
       .agenda-view { height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
       .agenda-row { display: flex; gap: 20px; align-items: center; background: var(--card); padding: 15px; border-radius: 20px; border: 1px solid var(--border); cursor: pointer; transition: transform 0.2s; }
@@ -699,7 +699,6 @@ class NightlightCardEditor extends LitElement {
     const target = ev.target;
     const value = target.value;
     const field = target.configValue;
-
     if (this._config[field] === value) return;
 
     const newConfig = { ...this._config, [field]: value };
@@ -710,11 +709,11 @@ class NightlightCardEditor extends LitElement {
     }));
   }
 
-  // Improved Entity Handler: Preserves existing colors/pics when adding new ones
   _entitiesChanged(ev) {
     const newEntityList = ev.detail.value;
+    // v1.2.2 Logic: Prevents resetting custom colors when adding/removing via UI
     const entities = newEntityList.map(entId => {
-      const existing = this._config.entities.find(e => e.entity === entId);
+      const existing = this._config.entities?.find(e => e.entity === entId);
       return existing || { entity: entId, color: '#7b61ff' };
     });
     
@@ -750,21 +749,13 @@ class NightlightCardEditor extends LitElement {
           <ha-entities-picker 
             .hass="${this.hass}" 
             .includeDomains="${['calendar']}"
-            .value="${this._config.entities.map(e => e.entity)}" 
+            .value="${this._config.entities?.map(e => e.entity) || []}" 
             @value-changed="${this._entitiesChanged}">
           </ha-entities-picker>
         </ha-expansion-panel>
 
-        <ha-expansion-panel header="Advanced Chores (YAML Required)" outlined>
-          <p>To add children, banner images, and specific chore items, please use the <strong>Code Editor</strong>. Visual Kid Management is coming in v1.3.</p>
-          <pre class="yaml-hint">
-chores:
-  - name: "Child Name"
-    image: "URL"
-    items:
-      - entity: input_boolean.chore_1
-        label: "Do Dishes"
-          </pre>
+        <ha-expansion-panel header="Advanced Chores (YAML View)" outlined>
+          <p>Visual Kid Management is planned for v1.3. For now, use the Code Editor to map items and banners.</p>
         </ha-expansion-panel>
       </div>`;
   }
@@ -772,11 +763,10 @@ chores:
   static get styles() {
     return css`
       .editor-shell { display: flex; flex-direction: column; gap: 15px; padding: 10px; }
-      ha-expansion-panel { margin-bottom: 10px; background: var(--card-background-color); border-radius: 8px; }
+      ha-expansion-panel { margin-bottom: 10px; background: var(--card-background-color); border-radius: 12px; }
       ha-textfield, ha-select { width: 100%; margin-top: 10px; }
       .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
       .helper { color: var(--secondary-text-color); font-size: 0.85rem; margin-top: 8px; }
-      .yaml-hint { background: #282c34; color: #abb2bf; padding: 10px; border-radius: 4px; font-size: 0.75rem; overflow-x: auto; }
     `;
   }
 }
