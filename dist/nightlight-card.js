@@ -1,8 +1,7 @@
 /**
- * Nightlight Dashboard (v1.1.7)
+ * Nightlight Dashboard (v1.4.0)
  * Senior Dev Lead: Rick P. | Melbourne
- * Features: Morning Chore Chart, Synchronized Grids, Multi-View, Event Creation
- * Code Length: 500+ Lines Unabridged
+ * Features: To-do List Memory, User-Specific Views, Stretched Banners, Refined Announcer
  */
 
 import {
@@ -57,20 +56,22 @@ class NightlightDashboard extends LitElement {
     if (this._activeCalendars.length === 0 && config.entities) {
       this._activeCalendars = config.entities.map(e => e.entity);
     }
-  
   }
 
   // --- Data Management & Lifecycle ---
 
   updated(changedProps) {
     if (changedProps.has('hass')) {
-    this._checkDailyReset(); // Only runs when hass is available
-  }
+      this._checkDailyReset(); // Only runs when hass is available
+    }
     if (changedProps.has('hass') || changedProps.has('_activeView') || changedProps.has('_calendarMode') || changedProps.has('_referenceDate')) {
       this._refreshData();
     }
   }
 
+  /**
+   * Centralized Memory Reset: Resets all Todo-list items to 'needs_action' every morning.
+   */
   async _checkDailyReset() {
     if (!this.hass || !this.config.chores) return;
     const today = new Date().toDateString();
@@ -78,11 +79,9 @@ class NightlightDashboard extends LitElement {
     if (this._lastResetDate !== today) {
       for (const kid of this.config.chores) {
         if (kid.todo_list) {
-          // Fetch the specific items for this child's todo list
           const todoState = this.hass.states[kid.todo_list];
           const items = todoState?.attributes?.items || [];
   
-          // Reset all completed items back to 'needs_action'
           for (const item of items) {
             if (item.status === 'completed') {
               await this.hass.callService('todo', 'update_item', {
@@ -99,45 +98,33 @@ class NightlightDashboard extends LitElement {
     }
   }
   
+  /**
+   * Helper: Reads item status from HASS state memory
+   */
   _getTodoStatus(entityId, taskLabel) {
     const todoState = this.hass.states[entityId];
-    const items = todoState?.attributes?.items || [];
+    if (!todoState) return false;
+    const items = todoState.attributes?.items || [];
     const item = items.find(i => i.summary.trim().toLowerCase() === taskLabel.trim().toLowerCase());
     return item ? item.status === 'completed' : false;
   }
   
-  async _toggleTodo(entityId, itemId, currentState) {
-    // To-do items use 'completed' or 'needs_action' states
-    const service = currentState === 'completed' ? 'update_item' : 'update_item';
-    const newStatus = currentState === 'completed' ? 'needs_action' : 'completed';
-  
+  /**
+   * Helper: Toggles a Todo list item on the server
+   */
+  async _toggleTodo(entityId, taskLabel, isDone) {
+    const newStatus = isDone ? 'needs_action' : 'completed';
     await this.hass.callService('todo', 'update_item', {
       entity_id: entityId,
-      item: itemId, // The unique ID or summary of the task
+      item: taskLabel,
       status: newStatus
     });
-    
-    this._refreshData(); // Force a refresh to show the update
+    this._refreshData();
   }
 
-  // Checks the state of a specific item within a Todo List entity
-  _isTodoItemComplete(entityId, label) {
-      const state = this.hass.states[entityId];
-      // This requires the 'todo' integration to have the item in its attributes
-      // Note: Some todo integrations may require a separate service call to fetch items
-      return state?.attributes?.items?.find(i => i.summary === label)?.status === 'completed';
-  }
-  
-  // Calls the service to check/uncheck the task on the server
-  async _handleTodoToggle(entityId, label, isDone) {
-      const newStatus = isDone ? 'needs_action' : 'completed';
-      await this.hass.callService('todo', 'update_item', {
-          entity_id: entityId,
-          item: label,
-          status: newStatus
-      });
-      // The UI will update automatically when HASS pushes the new state back
-  }
+  // Backwards compatibility helpers
+  _isTodoItemComplete(entityId, label) { return this._getTodoStatus(entityId, label); }
+  async _handleTodoToggle(entityId, label, isDone) { return this._toggleTodo(entityId, label, isDone); }
 
   async _refreshData() {
     if (!this.hass || this._loading) return;
@@ -146,7 +133,6 @@ class NightlightDashboard extends LitElement {
       if (this._activeView === 'calendar') {
         await this._fetchEvents();
       }
-      // Note: Chore states are pulled live via this.hass.states in the render method
     } finally {
       this._loading = false;
     }
@@ -167,12 +153,10 @@ class NightlightDashboard extends LitElement {
       end = new Date(start);
       end.setDate(start.getDate() + 7);
     } else {
-      // Day view or Agenda
       start.setHours(0,0,0,0);
       end.setHours(23,59,59,999);
     }
 
-    // Replace your startStr/endStr lines with these:
     const startStr = start.toISOString().replace(/\.\d+Z$/, "Z");
     const endStr = end.toISOString().replace(/\.\d+Z$/, "Z");
 
@@ -194,14 +178,9 @@ class NightlightDashboard extends LitElement {
 
   _navigate(dir) {
     const d = new Date(this._referenceDate);
-    if (this._calendarMode === 'month') {
-      d.setMonth(d.getMonth() + dir);
-    } else if (this._calendarMode === 'week') {
-      d.setDate(d.getDate() + (dir * 7));
-    } else {
-      // v1.1.6 Fix: Single day navigation for Daily view
-      d.setDate(d.getDate() + dir);
-    }
+    if (this._calendarMode === 'month') d.setMonth(d.getMonth() + dir);
+    else if (this._calendarMode === 'week') d.setDate(d.getDate() + (dir * 7));
+    else d.setDate(d.getDate() + dir);
     this._referenceDate = d;
   }
 
@@ -209,27 +188,11 @@ class NightlightDashboard extends LitElement {
     this._activeCalendars = this._activeCalendars.includes(id) ? this._activeCalendars.filter(i => i !== id) : [...this._activeCalendars, id];
   }
 
-  _toggleChore(entityId, kidIndex) {
-    const currentState = this.hass.states[entityId]?.state || 'off';
-    const newState = currentState === 'on' ? 'off' : 'on';
-    this.hass.callService('input_boolean', newState === 'on' ? 'turn_on' : 'turn_off', { entity_id: entityId });
-    
-    // Check for "All Done" helper and medal logic
-    const kid = this.config.chores[kidIndex];
-    if (kid.all_done_helper) {
-       setTimeout(() => {
-         const allDone = kid.items.every(i => this.hass.states[i.entity]?.state === 'on');
-         this.hass.callService('input_boolean', allDone ? 'turn_on' : 'turn_off', { entity_id: kid.all_done_helper });
-       }, 500);
-    }
-  }
-
   _handleMonthDayClick(dayNum, evsCount) {
     if (!dayNum) return;
     const newDate = new Date(this._referenceDate);
     newDate.setDate(dayNum);
     this._referenceDate = newDate;
-    // Auto-switch to day view if density is high
     if (evsCount > 2) this._calendarMode = 'day';
   }
 
@@ -240,9 +203,7 @@ class NightlightDashboard extends LitElement {
     const startT = root.getElementById('new_start').value;
     const endT = root.getElementById('new_end').value;
     const calendar = root.getElementById('new_calendar').value;
-
     if (!summary || !date || !calendar) return;
-
     try {
       await this.hass.callService('calendar', 'create_event', {
         entity_id: calendar,
@@ -271,7 +232,6 @@ class NightlightDashboard extends LitElement {
   _getTimeStyles(e) {
     const s = new Date(e.start.dateTime);
     const end = new Date(e.end.dateTime);
-    // 1.666 pixels per minute for a 100px hour box height
     const top = (s.getHours() * 60 + s.getMinutes()) * 1.666;
     const height = Math.max(((end - s) / 60000) * 1.666, 30);
     return `top:${top}px;height:${height}px`;
@@ -304,11 +264,10 @@ class NightlightDashboard extends LitElement {
            this._referenceDate.getFullYear() === t.getFullYear(); 
   }
 
-  // --- Rendering engines ---
+  // --- Rendering Engines ---
 
   render() {
     if (!this.hass) return html``;
-    
     const headerTitle = (this._activeView === 'calendar')
         ? this._referenceDate.toLocaleString('default', { month: 'long', year: 'numeric' })
         : this.config.title;
@@ -398,10 +357,7 @@ class NightlightDashboard extends LitElement {
         ${days.map(day => html`
           <div class="meal-card-item">
             <div class="meal-day-label">${day}</div>
-            <textarea 
-              placeholder="What's for dinner?" 
-              .value="${this._getData('meal_' + day)}"
-              @input="${(e) => this._saveData('meal_' + day, e.target.value)}"></textarea>
+            <textarea placeholder="What's for dinner?" .value="${this._getData('meal_' + day)}" @input="${(e) => this._saveData('meal_' + day, e.target.value)}"></textarea>
           </div>
         `)}
       </div>`;
@@ -411,10 +367,7 @@ class NightlightDashboard extends LitElement {
     return html`
       <div class="whiteboard-container">
         <div class="whiteboard-header">Family Notes</div>
-        <textarea 
-          placeholder="Leave a message for the family..."
-          .value="${this._getData('family_notes')}"
-          @input="${(e) => this._saveData('family_notes', e.target.value)}"></textarea>
+        <textarea placeholder="Leave a message for the family..." .value="${this._getData('family_notes')}" @input="${(e) => this._saveData('family_notes', e.target.value)}"></textarea>
       </div>`;
   }
 
@@ -425,14 +378,6 @@ class NightlightDashboard extends LitElement {
 
   _getData(key) {
     return localStorage.getItem(`nightlight_${key}`) || '';
-  }
-
-  _handleMonthDayClick(dayNum, evsCount) {
-    if (!dayNum) return;
-    const newDate = new Date(this._referenceDate);
-    newDate.setDate(dayNum);
-    this._referenceDate = newDate;
-    if (evsCount > 2) this._calendarMode = 'day';
   }
 
   _renderCalendarView() {
@@ -491,7 +436,6 @@ class NightlightDashboard extends LitElement {
                })}
             </div>
         </div>
-
         <div class="all-day-sync-row">
             <div class="axis-label-blank">All Day</div>
             <div class="ad-grid" style="--cols: ${daysCount}">
@@ -502,7 +446,6 @@ class NightlightDashboard extends LitElement {
                 })}
             </div>
         </div>
-
         <div class="main-scroll-sync">
             <div class="time-axis-fixed">${hours.map(h => html`<div class="time-mark">${h}:00</div>`)}</div>
             <div class="columns-scroll-sync" style="--cols: ${daysCount}">
@@ -528,7 +471,7 @@ class NightlightDashboard extends LitElement {
     const fragmented = this._fragmentEvents(this._events);
     const interleaved = fragmented
       .filter(e => this._activeCalendars.includes(e.origin))
-      .filter(e => new Date(e.displayDate) >= today) // Force Agenda to start TODAY
+      .filter(e => new Date(e.displayDate) >= today)
       .sort((a, b) => new Date(a.displayDate) - new Date(b.displayDate) || 
                       new Date(a.start.dateTime || a.start.date) - new Date(b.start.dateTime || b.start.date));
 
@@ -538,10 +481,7 @@ class NightlightDashboard extends LitElement {
           const isPastFragment = new Date(e.displayDate) < today;
           return html`
             <div class="agenda-row ${isPastFragment ? 'is-past' : ''}" @click="${() => this._selectedEvent = e}">
-              <div class="agenda-date">
-                <span class="day">${new Date(e.displayDate).getDate()}</span>
-                <span class="mon">${new Date(e.displayDate).toLocaleString('default', {month:'short'})}</span>
-              </div>
+              <div class="agenda-date"><span class="day">${new Date(e.displayDate).getDate()}</span><span class="mon">${new Date(e.displayDate).toLocaleString('default', {month:'short'})}</span></div>
               <div class="agenda-card" style="border-left: 6px solid ${e.color}">
                 <div class="ag-title">${e.summary}</div>
                 <div class="ag-meta">${e.friendly_name} • ${e.isAllDay ? 'All Day' : new Date(e.start.dateTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
@@ -551,29 +491,25 @@ class NightlightDashboard extends LitElement {
       </div>`;
   }
 
-
+  /**
+   * Central Memory & User-Specific Dashboard
+   */
   _renderChoreDashboard() {
-    if (!this.config.chores || !this.config.periods) {
-      return html`<div>No chores or periods configured.</div>`;
-    }
+    if (!this.config.chores || !this.config.periods) return html`<div>No chores or periods configured.</div>`;
 
     const now = new Date();
     const currentTime = now.getHours() * 60 + now.getMinutes();
-    const currentUser = this.hass.user.name; // Detect logged-in user
+    const currentUser = this.hass.user.name;
 
     const activePeriod = this.config.periods.find(p => {
       const [startH, startM] = p.start.split(':').map(Number);
       const [endH, endM] = p.end.split(':').map(Number);
-      const startTotal = startH * 60 + startM;
-      const endTotal = endH * 60 + endM;
-      return currentTime >= startTotal && currentTime <= endTotal;
+      return currentTime >= (startH * 60 + startM) && currentTime <= (endH * 60 + endM);
     });
 
-    if (!activePeriod) {
-      return html`<div class="chore-lock-msg">No active chore period right now.</div>`;
-    }
+    if (!activePeriod) return html`<div class="chore-lock-msg">No active chore period right now.</div>`;
 
-    // Filter children based on the assigned HA user (User-specific view)
+    // Filter kids based on the assigned HA user
     const visibleKids = this.config.chores.filter(kid => 
       !kid.assigned_user || kid.assigned_user === currentUser
     );
@@ -585,21 +521,14 @@ class NightlightDashboard extends LitElement {
           const activeTasks = (kid.items || []).filter(i => i.period === activePeriod.name);
           if (activeTasks.length === 0) return html``;
 
-          
-          const todoEntity = this.hass.states[kid.todo_list];
-          
           return html`
             <div class="kid-chore-card">
-               <div class="kid-banner" style="background-image: url('${kid.image}')">
-                  <h3>${kid.name}</h3>
-               </div>
+               <div class="kid-banner" style="background-image: url('${kid.image}')"><h3>${kid.name}</h3></div>
                <div class="kid-list">
                   ${activeTasks.map(item => {
-                    // This logic assumes you use the task label as the Todo Item name
-                    const isDone = this._isTodoItemComplete(kid.todo_list, item.label);
+                    const isDone = this._getTodoStatus(kid.todo_list, item.label);
                     return html`
-                      <div class="kid-item ${isDone ? 'done' : ''}" 
-                           @click="${() => this._handleTodoToggle(kid.todo_list, item.label, isDone)}">
+                      <div class="kid-item ${isDone ? 'done' : ''}" @click="${() => this._toggleTodo(kid.todo_list, item.label, isDone)}">
                          <ha-icon icon="${isDone ? 'mdi:check-circle' : 'mdi:circle-outline'}"></ha-icon>
                          <span>${item.label}</span>
                       </div>`;
@@ -608,7 +537,7 @@ class NightlightDashboard extends LitElement {
             </div>`;
         })}
       </div>`;
-}
+  }
 
   _renderModal() {
     return html`
@@ -653,13 +582,12 @@ class NightlightDashboard extends LitElement {
 
   static get styles() {
     return css`
-      :host {  --accent: #7b61ff;  --bg: var(--primary-background-color);  --card: var(--card-background-color);  --text: var(--primary-text-color);  --secondary-text: var(--secondary-text-color); --border: var(--divider-color); --gold: #ffd700; }
+      :host { --accent: #7b61ff; --bg: var(--primary-background-color); --card: var(--card-background-color); --text: var(--primary-text-color); --secondary-text: var(--secondary-text-color); --border: var(--divider-color); --gold: #ffd700; }
       .nightlight-hub.dark { --bg: #121212; --card: #1e1e1e; --text: #efefef; --border: #333; }
       .nightlight-hub { display: grid; grid-template-columns: 100px 1fr; height: calc(100vh - 100px); background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; border-radius: 20px; margin: 10px; }
       .nightlight-hub.dark .modal-body {background: var(--card);color: var(--text);}
-      .nightlight-hub.dark ha-textfield, 
-      .nightlight-hub.dark ha-select {--mdc-theme-text-primary-on-background: var(--text);}
-    
+      .nightlight-hub.dark ha-textfield, .nightlight-hub.dark ha-select {--mdc-theme-text-primary-on-background: var(--text);}
+      
       .logo-area { color: var(--accent); margin-bottom: 40px; width: 35px; }
       .side-rail { background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 30px 0; z-index: 20; }
       .nav-btn { background: none; border: none; padding: 25px 0; color: #bbb; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; font-weight: bold; width: 100%; }
@@ -689,23 +617,19 @@ class NightlightDashboard extends LitElement {
       .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(6, 1fr); gap: 10px; flex-grow: 1; height: 0; }
       .day-cell { background: var(--card); border: 2px solid var(--border); border-radius: 16px; padding: 12px; overflow: hidden; cursor: pointer; }
       .day-cell.today { border-color: var(--accent); border-width: 3px; }
-      .day-num { font-weight: 900; font-size: 1.2rem; }
       .ev-pill { margin-top: 3px; padding: 5px; border-radius: 4px; color: #fff; font-size: 0.7rem; font-weight: 800; white-space: nowrap; overflow: hidden; }
       .is-past { opacity: 0.3 !important; }
 
-      /* Structural Alignment Build 1.1.7 */
       .time-grid-root { display: flex; flex-direction: column; height: 100%; border: 1px solid var(--border); border-radius: 24px; overflow: hidden; background: var(--card); }
       .header-row-locked { display: flex; border-bottom: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
       .axis-placeholder { width: 70px; border-right: 1px solid var(--border); }
       .date-grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; height: 50px; }
       .header-cell { display: flex; align-items: center; justify-content: center; font-weight: 900; color: var(--text); border-right: 1px solid var(--border); font-size: 0.85rem; }
-      
       .all-day-sync-row { display: flex; border-bottom: 2px solid var(--border); background: var(--bg); flex-shrink: 0; }
       .axis-label-blank { width: 70px; border-right: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 900; color: #bbb; text-transform: uppercase; }
       .ad-grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; padding: 5px; gap: 5px; }
       .ad-col { min-height: 40px; display: flex; flex-direction: column; gap: 2px; }
       .ad-pill { padding: 4px 8px; border-radius: 4px; color: #fff; font-size: 0.7rem; font-weight: 800; white-space: nowrap; overflow: hidden; }
-      
       .main-scroll-sync { display: flex; flex-grow: 1; overflow-y: auto; overflow-x: hidden; }
       .time-axis-fixed { width: 70px; border-right: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
       .time-mark { height: 100px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; color: #888; font-weight: 700; }
@@ -715,25 +639,27 @@ class NightlightDashboard extends LitElement {
       .hour-box { height: 100px; border-bottom: 1px dotted var(--border); }
       .time-ev { position: absolute; left: 4px; right: 4px; padding: 10px; border-radius: 12px; color: #fff; font-size: 0.9rem; font-weight: 800; cursor: pointer; z-index: 2; }
 
-      /* --- Morning Chores Styles v1.2.1 --- */
       .chore-grid-locked { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 25px; height: 100%; overflow-y: auto; padding-bottom: 20px; }
       .kid-chore-card { background: var(--card); border-radius: 28px; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.04); position: relative; }
-      .kid-banner { height: 140px; background-size: 100% 100%; background-position: center; display: flex; align-items: flex-end; padding: 25px; color: #fff; position: relative; }
+      
+      /* REFINED BANNER: Stretched image to fit */
+      .kid-banner { height: 140px; background-size: 100% 100%; background-position: center; display: flex; align-items: flex-end; padding: 25px; color: #fff; position: relative; background-repeat: no-repeat; }
       .kid-banner::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(transparent, rgba(0,0,0,0.7)); }
       .kid-banner h3 { margin: 0; z-index: 1; font-size: 2rem; font-weight: 900; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
-      .period-announcer { grid-column: 1 / -1; text-align: center; font-weight: 900; text-transform: uppercase; letter-spacing: 2px;color: var(--accent); padding: 8px 20px; background: rgba(123, 97, 255, 0.08); border-radius: 12px; margin-bottom: 15px; }
+      
+      /* REFINED ANNOUNCER: Smaller and Right Aligned */
+      .period-announcer { grid-column: 1 / -1; text-align: right; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; color: var(--accent); padding: 8px 20px; background: rgba(123, 97, 255, 0.08); border-radius: 12px; margin-bottom: 15px; font-size: 0.75rem; }
       
       .medal { position: absolute; top: 20px; right: 20px; z-index: 2; --mdc-icon-size: 48px; color: var(--gold); filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.4)); animation: bounce 1s infinite alternate; }
       @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-5px); } }
 
       .kid-list { padding: 20px; display: flex; flex-direction: column; gap: 10px; }
-      .kid-item { display: flex; align-items: center; gap: 15px; padding: 16px; border-radius: 18px; cursor: pointer; color: #666; font-weight: 800; border: 1px solid transparent; transition: 0.2s; background: rgba(0,0,0,0.02); }
-      .kid-item.done { color: var(--accent); background: rgba(123, 97, 255, 0.08); opacity: 0.8; }
+      .kid-item { display: flex; align-items: center; gap: 15px; padding: 16px; border-radius: 18px; cursor: pointer; color: var(--text); font-weight: 800; border: 1px solid transparent; transition: 0.2s; background: rgba(0,0,0,0.02); }
+      .kid-item.done { color: var(--accent); background: rgba(123, 97, 255, 0.08); opacity: 0.6; }
       .kid-item ha-icon { --mdc-icon-size: 28px; }
       .chore-lock-msg {height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;color: var(--secondary-text-color); font-size: 1.5rem; font-weight: 700;}
       .chore-lock-msg::before { content: '🔒'; font-size: 4rem; }
       
-      /* Agenda Polishing */
       .agenda-view { height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
       .agenda-row { display: flex; gap: 20px; align-items: center; background: var(--card); padding: 15px; border-radius: 20px; border: 1px solid var(--border); cursor: pointer; transition: transform 0.2s; }
       .agenda-row.is-past { opacity: 0.3; filter: grayscale(1); }
@@ -748,7 +674,7 @@ class NightlightDashboard extends LitElement {
       .modal-body { background: var(--card); width: 500px; border-radius: 32px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
       .modal-header { padding: 30px; color: #fff; text-align: center; }
       .modal-content { padding: 30px; font-size: 1rem; line-height: 1.6; }
-      .modal-actions {display: flex;justify-content: flex-end;gap: 15px;padding: 20px 30px;background: var(--card); /* Ensure buttons aren't transparent */border-top: 1px solid var(--border);}
+      .modal-actions {display: flex;justify-content: flex-end;gap: 15px;padding: 20px 30px;background: var(--card); border-top: 1px solid var(--border);}
       .close-btn { width: 100%; padding: 20px; border: none; background: var(--accent); color: #fff; font-weight: 900; cursor: pointer; }
       ha-textfield, ha-select {display: block; margin-bottom: 5px;--mdc-theme-primary: var(--accent);}
       
@@ -757,13 +683,11 @@ class NightlightDashboard extends LitElement {
       .full-width {  width: 100%;}      
       .side-by-side { display: grid;  grid-template-columns: 1fr 1fr; gap: 10px;}
 
-      /* Modernized Meal Planner */
       .meal-grid-view { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; height: 100%; overflow-y: auto; padding: 10px; }
       .meal-card-item { background: var(--card); border-radius: 24px; border: 1px solid var(--border); padding: 25px; display: flex; flex-direction: column; box-shadow: 0 4px 15px rgba(0,0,0,0.02); }
       .meal-day-label { font-size: 1.4rem; font-weight: 900; color: var(--accent); margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }
       .meal-card-item textarea { flex-grow: 1; border: none; resize: none; font-size: 1.2rem; background: transparent; color: var(--text); outline: none; font-weight: 500; line-height: 1.4; }
 
-      /* Stylish Whiteboard */
       .whiteboard-container { height: 100%; display: flex; flex-direction: column; background: #fffcf0; border-radius: 32px; padding: 50px; border: 1px solid #f0e68c; box-shadow: inset 0 0 40px rgba(0,0,0,0.02); }
       .whiteboard-header { font-size: 2.2rem; font-weight: 900; margin-bottom: 30px; color: #444; letter-spacing: -1px; }
       .whiteboard-container textarea { flex-grow: 1; border: none; background: transparent; font-size: 1.8rem; color: #1a1a1b !important; outline: none; font-weight: 500; line-height: 1.5; }
@@ -962,12 +886,7 @@ class NightlightCardEditor extends LitElement {
                       const originalIdx = kid.items.indexOf(item);
                       return html`
                         <div class="chore-row">
-                          <ha-textfield 
-                            label="Task Name (Match Todo Item)" 
-                            .value="${item.label}" 
-                            @input="${e => this._choreItemChanged(kIdx, originalIdx, 'label', e.target.value)}">
-                          </ha-textfield>
-
+                          <ha-textfield label="Task Name (Exact match to Todo item)" .value="${item.label}" @input="${e => this._choreItemChanged(kIdx, originalIdx, 'label', e.target.value)}"></ha-textfield>
                           <ha-icon-button @click="${() => this._removeChore(kIdx, originalIdx)}">
                             <ha-icon icon="mdi:close"></ha-icon>
                           </ha-icon-button>
@@ -981,12 +900,7 @@ class NightlightCardEditor extends LitElement {
 
         <ha-expansion-panel header="Persona Styling" outlined>
           <div class="panel-content">
-            <ha-entities-picker 
-              .hass="${this.hass}" 
-              .includeDomains="${['calendar']}" 
-              .value="${this._config.entities?.map(e => e.entity) || []}" 
-              @value-changed="${this._entitiesChanged}">
-            </ha-entities-picker>
+            <ha-entities-picker .hass="${this.hass}" .includeDomains="${['calendar']}" .value="${this._config.entities?.map(e => e.entity) || []}" @value-changed="${this._entitiesChanged}"></ha-entities-picker>
             ${(this._config.entities || []).map((ent, idx) => html`
               <div class="persona-row">
                 <div class="persona-header">
@@ -1015,37 +929,20 @@ class NightlightCardEditor extends LitElement {
       .editor-shell { display: flex; flex-direction: column; gap: 12px; padding: 10px; color: var(--primary-text-color); }
       ha-expansion-panel { background: var(--secondary-background-color); border-radius: 12px; margin-bottom: 10px; }
       .panel-content { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
-      
-      ha-textfield, ha-select, ha-entity-picker {
-        display: block;
-        width: 100%;
-        margin-top: 8px;
-        --mdc-theme-text-primary-on-background: var(--primary-text-color);
-        --mdc-theme-text-secondary-on-background: var(--secondary-text-color);
-        --mdc-text-field-fill-color: var(--secondary-background-color);
-        --mdc-text-field-ink-color: var(--primary-text-color);
-      }
-      
+      ha-textfield, ha-select, ha-entity-picker { display: block; width: 100%; margin-top: 8px; --mdc-theme-text-primary-on-background: var(--primary-text-color); --mdc-theme-text-secondary-on-background: var(--secondary-text-color); --mdc-text-field-fill-color: var(--secondary-background-color); --mdc-text-field-ink-color: var(--primary-text-color); }
       ha-icon-button { display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
       ha-icon { --mdc-icon-size: 20px; }
-
       .period-header { display: grid; grid-template-columns: 80px 80px 1fr 40px; gap: 8px; font-size: 0.7rem; font-weight: bold; text-transform: uppercase; color: var(--secondary-text-color); padding: 0 8px; }
       .period-row { display: grid; grid-template-columns: 80px 80px 1fr 40px; gap: 8px; align-items: center; background: var(--primary-background-color); padding: 8px; border-radius: 8px; }
-      
       .kid-box { padding: 15px; border: 1px solid var(--divider-color); border-radius: 12px; background: var(--card-background-color); display: flex; flex-direction: column; gap: 12px; }
       .kid-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-      
       .mapping-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-
       .period-group { padding: 10px; background: var(--secondary-background-color); border-radius: 8px; border-left: 3px solid var(--accent-color, #7b61ff); display: flex; flex-direction: column; gap: 8px; }
       .period-group-title { display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 0.85rem; }
-      
       .chore-row { display: grid; grid-template-columns: 1fr 40px; align-items: center; gap: 8px; padding: 8px; background: var(--primary-background-color); border-radius: 8px; border: 1px solid var(--divider-color); }
-      
       .persona-row { padding: 12px; border-bottom: 1px solid var(--divider-color); }
       .persona-header { display: flex; justify-content: space-between; align-items: center; }
       .persona-row .controls { display: grid; grid-template-columns: 40px 1fr; gap: 15px; align-items: center; margin-top: 8px; }
-      
       input[type="color"] { width: 40px; height: 40px; border: 2px solid var(--divider-color); border-radius: 8px; padding: 0; background: none; cursor: pointer; }
       .mush-btn { width: 100%; margin-top: 10px; }
     `;
@@ -1058,8 +955,6 @@ customElements.define("nightlight-card-editor", NightlightCardEditor);
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "nightlight-calendar-card",
-  name: "Nightlight Hub v1.3.1",
-  description: "Add-on Architecture Alpha: Multi-file setup with Advanced Chores GUI."
-
+  name: "Nightlight Hub v1.4.0",
+  description: "To-do memory and user detection enabled."
 });
-
