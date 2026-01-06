@@ -703,11 +703,44 @@ class NightlightCardEditor extends LitElement {
 
   _entitiesChanged(ev) {
     const newEntityList = ev.detail.value;
-    // v1.2.2 Logic: Prevents resetting custom colors when adding/removing via UI
+    const currentEntities = this._config.entities || [];
+    
+    // Logic: Map new selection while strictly preserving existing custom data (colors/pics)
     const entities = newEntityList.map(entId => {
-      const existing = this._config.entities?.find(e => e.entity === entId);
-      return existing || { entity: entId, color: '#7b61ff' };
+      const existing = currentEntities.find(e => e.entity === entId);
+      return existing ? { ...existing } : { entity: entId, color: '#7b61ff', picture: '' };
     });
+    
+    this.dispatchEvent(new CustomEvent("config-changed", { 
+      detail: { config: { ...this._config, entities } }, 
+      bubbles: true, 
+      composed: true 
+    }));
+  }
+
+  _entityPropertyChanged(idx, prop, value) {
+    if (!this._config || !this.hass) return;
+    const entities = JSON.parse(JSON.stringify(this._config.entities || []));
+    if (!entities[idx]) return;
+    
+    entities[idx][prop] = value;
+    
+    this.dispatchEvent(new CustomEvent("config-changed", { 
+      detail: { config: { ...this._config, entities } }, 
+      bubbles: true, 
+      composed: true 
+    }));
+  }
+  
+  _moveEntity(idx, direction) {
+    if (!this._config?.entities) return;
+    const entities = [...this._config.entities];
+    const newIdx = idx + direction;
+    
+    if (newIdx < 0 || newIdx >= entities.length) return;
+    
+    // Swap logic for persona ordering
+    [entities[idx], entities[newIdx]] = [entities[newIdx], entities[idx]];
     
     this.dispatchEvent(new CustomEvent("config-changed", { 
       detail: { config: { ...this._config, entities } }, 
@@ -736,14 +769,39 @@ class NightlightCardEditor extends LitElement {
           <p class="helper">Determines when the morning chore chart is active.</p>
         </ha-expansion-panel>
 
-        <ha-expansion-panel header="Calendar & Persona Management" outlined>
-          <p>Add calendars to populate the main grid and persona filters.</p>
+        <ha-expansion-panel header="Calendar & Persona Management" outlined expanded>
+          <p>Add calendars and customize colors, pictures, and display order.</p>
           <ha-entities-picker 
             .hass="${this.hass}" 
             .includeDomains="${['calendar']}"
             .value="${this._config.entities?.map(e => e.entity) || []}" 
             @value-changed="${this._entitiesChanged}">
           </ha-entities-picker>
+          
+          <div class="entities-list">
+            ${this._config.entities?.map((ent, idx) => html`
+              <div class="entity-config-row">
+                <div class="entity-header-actions">
+                  <div class="entity-id-label">
+                    <ha-icon icon="mdi:calendar-account"></ha-icon>
+                    <span>${ent.entity}</span>
+                  </div>
+                  <div class="order-btns">
+                    <ha-icon-button @click="${() => this._moveEntity(idx, -1)}" .disabled="${idx === 0}">
+                      <ha-icon icon="mdi:arrow-up"></ha-icon>
+                    </ha-icon-button>
+                    <ha-icon-button @click="${() => this._moveEntity(idx, 1)}" .disabled="${idx === this._config.entities.length - 1}">
+                      <ha-icon icon="mdi:arrow-down"></ha-icon>
+                    </ha-icon-button>
+                  </div>
+                </div>
+                <div class="side-by-side">
+                  <ha-textfield label="HEX Color" .value="${ent.color || '#7b61ff'}" @input="${(e) => this._entityPropertyChanged(idx, 'color', e.target.value)}"></ha-textfield>
+                  <ha-textfield label="Picture URL" .value="${ent.picture || ''}" @input="${(e) => this._entityPropertyChanged(idx, 'picture', e.target.value)}"></ha-textfield>
+                </div>
+              </div>
+            `)}
+          </div>
         </ha-expansion-panel>
 
         <ha-expansion-panel header="Advanced Chores (YAML View)" outlined>
@@ -759,6 +817,16 @@ class NightlightCardEditor extends LitElement {
       ha-textfield, ha-select { width: 100%; margin-top: 10px; }
       .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
       .helper { color: var(--secondary-text-color); font-size: 0.85rem; margin-top: 8px; }
+      
+      .entities-list { margin-top: 15px; border-top: 1px solid var(--divider-color); padding-top: 5px; }
+      .entity-config-row { padding: 12px; border: 1px solid var(--divider-color); border-radius: 8px; margin-top: 12px; background: rgba(0,0,0,0.02); }
+      
+      .entity-header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+      .entity-id-label { font-weight: bold; font-size: 0.85rem; display: flex; align-items: center; gap: 8px; color: var(--primary-text-color); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+      .entity-id-label ha-icon { --mdc-icon-size: 18px; color: var(--secondary-text-color); }
+      
+      .order-btns { display: flex; gap: 4px; }
+      .order-btns ha-icon-button { --mdc-icon-button-size: 28px; --mdc-icon-size: 18px; color: var(--secondary-text-color); }
     `;
   }
 }
