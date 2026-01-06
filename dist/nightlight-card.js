@@ -98,7 +98,14 @@ class NightlightDashboard extends LitElement {
       this._lastResetDate = today;
     }
   }
-
+  
+  _getTodoStatus(entityId, taskLabel) {
+    const todoState = this.hass.states[entityId];
+    const items = todoState?.attributes?.items || [];
+    const item = items.find(i => i.summary.trim().toLowerCase() === taskLabel.trim().toLowerCase());
+    return item ? item.status === 'completed' : false;
+  }
+  
   async _toggleTodo(entityId, itemId, currentState) {
     // To-do items use 'completed' or 'needs_action' states
     const service = currentState === 'completed' ? 'update_item' : 'update_item';
@@ -578,7 +585,7 @@ class NightlightDashboard extends LitElement {
           const activeTasks = (kid.items || []).filter(i => i.period === activePeriod.name);
           if (activeTasks.length === 0) return html``;
 
-          // To-do logic: check if items are 'completed' in the HASS todo entity
+          
           const todoEntity = this.hass.states[kid.todo_list];
           
           return html`
@@ -711,10 +718,10 @@ class NightlightDashboard extends LitElement {
       /* --- Morning Chores Styles v1.2.1 --- */
       .chore-grid-locked { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 25px; height: 100%; overflow-y: auto; padding-bottom: 20px; }
       .kid-chore-card { background: var(--card); border-radius: 28px; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.04); position: relative; }
-      .kid-banner { height: 140px; background-size: cover; background-position: center; display: flex; align-items: flex-end; padding: 25px; color: #fff; position: relative; }
+      .kid-banner { height: 140px; background-size: 100% 100%; background-position: center; display: flex; align-items: flex-end; padding: 25px; color: #fff; position: relative; }
       .kid-banner::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(transparent, rgba(0,0,0,0.7)); }
       .kid-banner h3 { margin: 0; z-index: 1; font-size: 2rem; font-weight: 900; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
-      .period-announcer { grid-column: 1 / -1; text-align: center; font-weight: 900; text-transform: uppercase; letter-spacing: 2px;color: var(--accent); padding: 10px; background: rgba(123, 97, 255, 0.1); border-radius: 12px; margin-bottom: 20px;}
+      .period-announcer { grid-column: 1 / -1; text-align: center; font-weight: 900; text-transform: uppercase; letter-spacing: 2px;color: var(--accent); padding: 8px 20px; background: rgba(123, 97, 255, 0.08); border-radius: 12px; margin-bottom: 15px; }
       
       .medal { position: absolute; top: 20px; right: 20px; z-index: 2; --mdc-icon-size: 48px; color: var(--gold); filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.4)); animation: bounce 1s infinite alternate; }
       @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-5px); } }
@@ -1055,3 +1062,4 @@ window.customCards.push({
   description: "Add-on Architecture Alpha: Multi-file setup with Advanced Chores GUI."
 
 });
+
