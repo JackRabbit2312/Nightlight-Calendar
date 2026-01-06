@@ -719,6 +719,9 @@ class NightlightDashboard extends LitElement {
         }
         .view-switcher { flex-shrink: 0; }
         .top-bar h1 { font-size: 1.4rem; }
+        
+        /* Mobile padding adjustment (Target: 5px-15px) */
+        .main-stage { padding: 8px !important; }
       }
       
       .main-stage { padding: 15px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; overflow: hidden; }
@@ -753,12 +756,12 @@ class NightlightDashboard extends LitElement {
       .date-grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; height: 40px; }
       .header-cell { display: flex; align-items: center; justify-content: center; font-weight: 900; color: var(--text); border-right: 1px solid var(--border); font-size: 0.7rem; }
       
-      /* SHRUNK ALL DAY SECTION */
-      .all-day-sync-row { display: flex; border-bottom: 2px solid var(--border); background: var(--bg); flex-shrink: 0; min-height: 25px; }
+      /* SHRUNK ALL DAY SECTION (Weekly View) */
+      .all-day-sync-row { display: flex; border-bottom: 2px solid var(--border); background: var(--bg); flex-shrink: 0; min-height: 20px; }
       .axis-label-blank { width: 50px; border-right: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.5rem; font-weight: 900; color: #bbb; text-transform: uppercase; }
       .ad-grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; padding: 2px; gap: 2px; }
       .ad-col { min-height: 20px; display: flex; flex-direction: column; gap: 2px; }
-      .ad-pill { padding: 2px 4px; border-radius: 3px; color: #fff; font-size: 0.55rem; font-weight: 800; white-space: nowrap; overflow: hidden; }
+      .ad-pill { padding: 1px 4px; border-radius: 3px; color: #fff; font-size: 0.5rem; font-weight: 800; white-space: nowrap; overflow: hidden; height: 14px; line-height: 14px; }
       
       .main-scroll-sync { display: flex; flex-grow: 1; overflow-y: auto; overflow-x: hidden; }
       .time-axis-fixed { width: 50px; border-right: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
@@ -812,8 +815,16 @@ class NightlightDashboard extends LitElement {
         pointer-events: auto; /* IMPORTANT FIX */
       }
       .kid-item:active { background: rgba(123, 97, 255, 0.15); transform: scale(0.97); }
-      .kid-item.done { color: var(--accent); background: rgba(123, 97, 255, 0.08); opacity: 0.6; }
+      
+      /* ENHANCED DONE STATE: High visibility checkmarks */
+      .kid-item.done { 
+        background: rgba(52, 199, 89, 0.15) !important; 
+        border: 1px solid rgba(52, 199, 89, 0.3);
+        opacity: 0.8; 
+      }
       .kid-item.done span { text-decoration: line-through; color: var(--secondary-text-color); }
+      .kid-item.done ha-icon { color: #34c759 !important; }
+      
       .kid-item ha-icon { --mdc-icon-size: 24px; transition: transform 0.2s; }
       .chore-lock-msg { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--secondary-text-color); font-size: 1.2rem; font-weight: 700; }
       
@@ -1124,6 +1135,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
