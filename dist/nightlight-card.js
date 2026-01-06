@@ -679,9 +679,8 @@ class NightlightDashboard extends LitElement {
       .nightlight-hub.dark .whiteboard-container textarea { color: #efefef !important; }
     `;
   }
+}
 
-// --- Visual Editor Sub-Class ---
-// --- PRIORITY v1.1.8 VISUAL EDITOR UPGRADE ---
 class NightlightCardEditor extends LitElement {
   static get properties() { return { hass: {}, _config: {} }; }
   
@@ -770,6 +769,6 @@ customElements.define("nightlight-card-editor", NightlightCardEditor);
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "nightlight-calendar-card",
-  name: "Nightlight Hub v1.1.7",
-  description: "Unabridged: Kid Chore Chart + Sync Scroll Grid + Corrected Nav."
+  name: "Nightlight Hub v1.2.4",
+  description: "Structural Repair Master Build: Corrected Editor, Chores, and Persistence."
 });
