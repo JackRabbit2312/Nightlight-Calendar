@@ -691,40 +691,92 @@ class NightlightDashboard extends LitElement {
 // --- PRIORITY v1.1.8 VISUAL EDITOR UPGRADE ---
 class NightlightCardEditor extends LitElement {
   static get properties() { return { hass: {}, _config: {} }; }
+  
   setConfig(config) { this._config = config; }
 
   _valueChanged(ev) {
     if (!this._config || !this.hass) return;
     const target = ev.target;
-    const newConfig = { ...this._config, [target.configValue]: target.value };
-    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: newConfig }, bubbles: true, composed: true }));
+    const value = target.value;
+    const field = target.configValue;
+
+    if (this._config[field] === value) return;
+
+    const newConfig = { ...this._config, [field]: value };
+    this.dispatchEvent(new CustomEvent("config-changed", { 
+      detail: { config: newConfig }, 
+      bubbles: true, 
+      composed: true 
+    }));
+  }
+
+  // Improved Entity Handler: Preserves existing colors/pics when adding new ones
+  _entitiesChanged(ev) {
+    const newEntityList = ev.detail.value;
+    const entities = newEntityList.map(entId => {
+      const existing = this._config.entities.find(e => e.entity === entId);
+      return existing || { entity: entId, color: '#7b61ff' };
+    });
+    
+    this.dispatchEvent(new CustomEvent("config-changed", { 
+      detail: { config: { ...this._config, entities } }, 
+      bubbles: true, 
+      composed: true 
+    }));
   }
 
   render() {
     if (!this.hass || !this._config) return html``;
     return html`
-      <div style="display:flex; flex-direction:column; gap:15px">
-        <ha-textfield label="Dashboard Title" .value="${this._config.title}" .configValue="${'title'}" @input="${this._valueChanged}"></ha-textfield>
-        <ha-select label="Theme" .value="${this._config.theme}" .configValue="${'theme'}" @selected="${this._valueChanged}">
-            <mwc-list-item value="light">Skylight Light</mwc-list-item>
-            <mwc-list-item value="dark">Nightlight Dark</mwc-list-item>
-        </ha-select>
-        <h3>Family Management</h3>
-        <p>Use the YAML editor for advanced Chore item mapping and Banner image URLs.</p>
+      <div class="editor-shell">
+        <ha-expansion-panel header="Core Hub Settings" outlined expanded>
+          <ha-textfield label="Dashboard Title" .value="${this._config.title}" .configValue="${'title'}" @input="${this._valueChanged}"></ha-textfield>
+          <ha-select label="Theme Selection" .value="${this._config.theme}" .configValue="${'theme'}" @selected="${this._valueChanged}">
+              <mwc-list-item value="light">Skylight Light</mwc-list-item>
+              <mwc-list-item value="dark">Nightlight Dark</mwc-list-item>
+          </ha-select>
+        </ha-expansion-panel>
+
+        <ha-expansion-panel header="Chore Window Settings" outlined>
+          <div class="side-by-side">
+            <ha-textfield label="Visibility Start (HH:MM)" .value="${this._config.chore_start || '06:00'}" .configValue="${'chore_start'}" @input="${this._valueChanged}"></ha-textfield>
+            <ha-textfield label="Visibility End (HH:MM)" .value="${this._config.chore_end || '09:00'}" .configValue="${'chore_end'}" @input="${this._valueChanged}"></ha-textfield>
+          </div>
+          <p class="helper">Determines when the morning chore chart is active.</p>
+        </ha-expansion-panel>
+
+        <ha-expansion-panel header="Calendar & Persona Management" outlined>
+          <p>Add calendars to populate the main grid and persona filters.</p>
+          <ha-entities-picker 
+            .hass="${this.hass}" 
+            .includeDomains="${['calendar']}"
+            .value="${this._config.entities.map(e => e.entity)}" 
+            @value-changed="${this._entitiesChanged}">
+          </ha-entities-picker>
+        </ha-expansion-panel>
+
+        <ha-expansion-panel header="Advanced Chores (YAML Required)" outlined>
+          <p>To add children, banner images, and specific chore items, please use the <strong>Code Editor</strong>. Visual Kid Management is coming in v1.3.</p>
+          <pre class="yaml-hint">
+chores:
+  - name: "Child Name"
+    image: "URL"
+    items:
+      - entity: input_boolean.chore_1
+        label: "Do Dishes"
+          </pre>
+        </ha-expansion-panel>
       </div>`;
-  }
-
-
-  _entitiesChanged(ev) {
-    const entities = ev.detail.value.map(ent => ({ entity: ent, color: '#7b61ff' }));
-    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, entities } }, bubbles: true, composed: true }));
   }
 
   static get styles() {
     return css`
-      .editor-shell { display: flex; flex-direction: column; gap: 15px; }
-      ha-expansion-panel { margin-bottom: 10px; }
+      .editor-shell { display: flex; flex-direction: column; gap: 15px; padding: 10px; }
+      ha-expansion-panel { margin-bottom: 10px; background: var(--card-background-color); border-radius: 8px; }
       ha-textfield, ha-select { width: 100%; margin-top: 10px; }
+      .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .helper { color: var(--secondary-text-color); font-size: 0.85rem; margin-top: 8px; }
+      .yaml-hint { background: #282c34; color: #abb2bf; padding: 10px; border-radius: 4px; font-size: 0.75rem; overflow-x: auto; }
     `;
   }
 }
