@@ -72,19 +72,65 @@ class NightlightDashboard extends LitElement {
   }
 
   async _checkDailyReset() {
-    if (!this.hass || !this.config.chores) return; // Guard added
+    if (!this.hass || !this.config.chores) return;
     const today = new Date().toDateString();
+  
     if (this._lastResetDate !== today) {
-      const allChoreEntities = this.config.chores?.flatMap(kid => kid.items.map(i => i.entity)) || [];
-      // Only call if there are actually entities to turn off
-      const validEntities = allChoreEntities.filter(ent => ent && this.hass.states[ent]);
-      if (validEntities.length > 0) {
-        await this.hass.callService('input_boolean', 'turn_off', { entity_id: validEntities });
-        localStorage.setItem('nightlight_reset_date', today);
-        this._lastResetDate = today;
+      for (const kid of this.config.chores) {
+        if (kid.todo_list) {
+          // Fetch the specific items for this child's todo list
+          const todoState = this.hass.states[kid.todo_list];
+          const items = todoState?.attributes?.items || [];
+  
+          // Reset all completed items back to 'needs_action'
+          for (const item of items) {
+            if (item.status === 'completed') {
+              await this.hass.callService('todo', 'update_item', {
+                entity_id: kid.todo_list,
+                item: item.summary,
+                status: 'needs_action'
+              });
+            }
+          }
+        }
       }
+      localStorage.setItem('nightlight_reset_date', today);
+      this._lastResetDate = today;
     }
-}
+  }
+
+  async _toggleTodo(entityId, itemId, currentState) {
+    // To-do items use 'completed' or 'needs_action' states
+    const service = currentState === 'completed' ? 'update_item' : 'update_item';
+    const newStatus = currentState === 'completed' ? 'needs_action' : 'completed';
+  
+    await this.hass.callService('todo', 'update_item', {
+      entity_id: entityId,
+      item: itemId, // The unique ID or summary of the task
+      status: newStatus
+    });
+    
+    this._refreshData(); // Force a refresh to show the update
+  }
+
+  // Checks the state of a specific item within a Todo List entity
+  _isTodoItemComplete(entityId, label) {
+      const state = this.hass.states[entityId];
+      // This requires the 'todo' integration to have the item in its attributes
+      // Note: Some todo integrations may require a separate service call to fetch items
+      return state?.attributes?.items?.find(i => i.summary === label)?.status === 'completed';
+  }
+  
+  // Calls the service to check/uncheck the task on the server
+  async _handleTodoToggle(entityId, label, isDone) {
+      const newStatus = isDone ? 'needs_action' : 'completed';
+      await this.hass.callService('todo', 'update_item', {
+          entity_id: entityId,
+          item: label,
+          status: newStatus
+      });
+      // The UI will update automatically when HASS pushes the new state back
+  }
 
   async _refreshData() {
     if (!this.hass || this._loading) return;
@@ -498,6 +544,7 @@ class NightlightDashboard extends LitElement {
       </div>`;
   }
 
+
   _renderChoreDashboard() {
     if (!this.config.chores || !this.config.periods) {
       return html`<div>No chores or periods configured.</div>`;
@@ -505,8 +552,8 @@ class NightlightDashboard extends LitElement {
 
     const now = new Date();
     const currentTime = now.getHours() * 60 + now.getMinutes();
+    const currentUser = this.hass.user.name; // Detect logged-in user
 
-    // Find the active period based on the current time
     const activePeriod = this.config.periods.find(p => {
       const [startH, startM] = p.start.split(':').map(Number);
       const [endH, endM] = p.end.split(':').map(Number);
@@ -516,42 +563,45 @@ class NightlightDashboard extends LitElement {
     });
 
     if (!activePeriod) {
-      return html`
-        <div class="chore-lock-msg">
-          No active chore period right now. 
-          <br>Check back during scheduled times.
-        </div>`;
+      return html`<div class="chore-lock-msg">No active chore period right now.</div>`;
     }
+
+    // Filter children based on the assigned HA user (User-specific view)
+    const visibleKids = this.config.chores.filter(kid => 
+      !kid.assigned_user || kid.assigned_user === currentUser
+    );
 
     return html`
       <div class="chore-grid-locked">
         <div class="period-announcer">Active: ${activePeriod.name}</div>
-        ${this.config.chores.map((kid, kIndex) => {
-          // Filter tasks to ONLY show those matching the active period's name
+        ${visibleKids.map((kid, kIndex) => {
           const activeTasks = (kid.items || []).filter(i => i.period === activePeriod.name);
-          
           if (activeTasks.length === 0) return html``;
 
-          const allDone = activeTasks.every(i => this.hass.states[i.entity]?.state === 'on');
-
+          // To-do logic: check if items are 'completed' in the HASS todo entity
+          const todoEntity = this.hass.states[kid.todo_list];
+          
           return html`
             <div class="kid-chore-card">
                <div class="kid-banner" style="background-image: url('${kid.image}')">
                   <h3>${kid.name}</h3>
-                  ${allDone ? html`<ha-icon class="medal" icon="mdi:medal"></ha-icon>` : ''}
                </div>
                <div class="kid-list">
-                  ${activeTasks.map(item => html`
-                    <div class="kid-item ${this.hass.states[item.entity]?.state === 'on' ? 'done' : ''}" 
-                         @click="${() => this._toggleChore(item.entity, kIndex)}">
-                       <ha-icon icon="${this.hass.states[item.entity]?.state === 'on' ? 'mdi:check-circle' : 'mdi:circle-outline'}"></ha-icon>
-                       <span>${item.label}</span>
-                    </div>`)}
+                  ${activeTasks.map(item => {
+                    // This logic assumes you use the task label as the Todo Item name
+                    const isDone = this._isTodoItemComplete(kid.todo_list, item.label);
+                    return html`
+                      <div class="kid-item ${isDone ? 'done' : ''}" 
+                           @click="${() => this._handleTodoToggle(kid.todo_list, item.label, isDone)}">
+                         <ha-icon icon="${isDone ? 'mdi:check-circle' : 'mdi:circle-outline'}"></ha-icon>
+                         <span>${item.label}</span>
+                      </div>`;
+                  })}
                </div>
             </div>`;
         })}
       </div>`;
-  }
+}
 
   _renderModal() {
     return html`
@@ -723,8 +773,6 @@ class NightlightCardEditor extends LitElement {
   
   setConfig(config) {
     this._config = config;
-
-    // Force Home Assistant to load the internal entity picker component
     const loadHAComponents = async () => {
       if (!customElements.get("ha-entity-picker")) {
         const cardHelpers = await window.loadCardHelpers();
@@ -797,7 +845,7 @@ class NightlightCardEditor extends LitElement {
 
   _addKid() {
     const chores = [...(this._config.chores || [])];
-    chores.push({ name: "New Child", image: "", all_done_helper: "", use_person_image: false, items: [] });
+    chores.push({ name: "New Child", image: "", todo_list: "", assigned_user: "", items: [] });
     this._updateConfig({ chores });
   }
 
@@ -816,7 +864,7 @@ class NightlightCardEditor extends LitElement {
   _addChoreToPeriod(kIdx, periodName) {
     const chores = JSON.parse(JSON.stringify(this._config.chores || []));
     if (!chores[kIdx].items) chores[kIdx].items = [];
-    chores[kIdx].items.push({ label: "New Task", entity: "", period: periodName });
+    chores[kIdx].items.push({ label: "New Task", period: periodName });
     this._updateConfig({ chores });
   }
 
@@ -876,6 +924,23 @@ class NightlightCardEditor extends LitElement {
                     <ha-icon icon="mdi:account-remove"></ha-icon>
                   </ha-icon-button>
                 </div>
+
+                <div class="mapping-grid">
+                  <ha-entity-picker 
+                    label="Linked To-do List"
+                    .hass="${this.hass}"
+                    .value="${kid.todo_list}"
+                    .includeDomains="${['todo']}"
+                    @value-changed="${e => this._kidPropertyChanged(kIdx, 'todo_list', e.detail.value)}">
+                  </ha-entity-picker>
+
+                  <ha-textfield 
+                    label="Assigned HA User" 
+                    .value="${kid.assigned_user || ''}"
+                    @input="${e => this._kidPropertyChanged(kIdx, 'assigned_user', e.target.value)}">
+                  </ha-textfield>
+                </div>
+
                 <ha-textfield label="Banner Image URL" .value="${kid.image || ''}" @input="${e => this._kidPropertyChanged(kIdx, 'image', e.target.value)}"></ha-textfield>
 
                 ${periods.map(p => html`
@@ -887,23 +952,14 @@ class NightlightCardEditor extends LitElement {
                       </ha-icon-button>
                     </div>
                     ${kid.items?.filter(i => i.period === p.name).map((item, iIdx) => {
-                      const originalIdx = kid.items.indexOf(item); // Correct way to find the index
+                      const originalIdx = kid.items.indexOf(item);
                       return html`
                         <div class="chore-row">
                           <ha-textfield 
-                            label="Task Label" 
+                            label="Task Name (Match Todo Item)" 
                             .value="${item.label}" 
                             @input="${e => this._choreItemChanged(kIdx, originalIdx, 'label', e.target.value)}">
                           </ha-textfield>
-
-                          <ha-entity-picker
-                            label="Linked Entity"
-                            .hass="${this.hass}"
-                            .value="${item.entity}"
-                            .includeDomains="${['input_boolean', 'switch', 'light']}"
-                            @value-changed="${e => this._choreItemChanged(kIdx, originalIdx, 'entity', e.detail.value)}"
-                            allow-custom-entity
-                          ></ha-entity-picker>
 
                           <ha-icon-button @click="${() => this._removeChore(kIdx, originalIdx)}">
                             <ha-icon icon="mdi:close"></ha-icon>
@@ -957,14 +1013,13 @@ class NightlightCardEditor extends LitElement {
         display: block;
         width: 100%;
         margin-top: 8px;
-        /* Use HA theme variables for text colors */
         --mdc-theme-text-primary-on-background: var(--primary-text-color);
         --mdc-theme-text-secondary-on-background: var(--secondary-text-color);
         --mdc-text-field-fill-color: var(--secondary-background-color);
         --mdc-text-field-ink-color: var(--primary-text-color);
       }
       
-      ha-icon-button { display: flex; align-items: center;justify-content: center; margin-bottom: 4px;}
+      ha-icon-button { display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
       ha-icon { --mdc-icon-size: 20px; }
 
       .period-header { display: grid; grid-template-columns: 80px 80px 1fr 40px; gap: 8px; font-size: 0.7rem; font-weight: bold; text-transform: uppercase; color: var(--secondary-text-color); padding: 0 8px; }
@@ -972,14 +1027,14 @@ class NightlightCardEditor extends LitElement {
       
       .kid-box { padding: 15px; border: 1px solid var(--divider-color); border-radius: 12px; background: var(--card-background-color); display: flex; flex-direction: column; gap: 12px; }
       .kid-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+      
+      .mapping-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
       .period-group { padding: 10px; background: var(--secondary-background-color); border-radius: 8px; border-left: 3px solid var(--accent-color, #7b61ff); display: flex; flex-direction: column; gap: 8px; }
       .period-group-title { display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 0.85rem; }
       
-      .chore-row { display: flex; flex-direction: column;gap: 12px; padding: 12px;background: var(--secondary-background-color); border-radius: 8px;  margin-top: 8px; border: 1px solid var(--divider-color);}
-      @media (min-width: 450px) { .chore-row {   display: grid;grid-template-columns: 1fr 1fr 40px;   align-items: center;  }}
+      .chore-row { display: grid; grid-template-columns: 1fr 40px; align-items: center; gap: 8px; padding: 8px; background: var(--primary-background-color); border-radius: 8px; border: 1px solid var(--divider-color); }
       
-      ha-entity-picker { display: block; width: 100%;min-height: 50px; --mdc-theme-primary: var(--accent-color, #7b61ff);}
-
       .persona-row { padding: 12px; border-bottom: 1px solid var(--divider-color); }
       .persona-header { display: flex; justify-content: space-between; align-items: center; }
       .persona-row .controls { display: grid; grid-template-columns: 40px 1fr; gap: 15px; align-items: center; margin-top: 8px; }
@@ -998,4 +1053,5 @@ window.customCards.push({
   type: "nightlight-calendar-card",
   name: "Nightlight Hub v1.3.1",
   description: "Add-on Architecture Alpha: Multi-file setup with Advanced Chores GUI."
+
 });
