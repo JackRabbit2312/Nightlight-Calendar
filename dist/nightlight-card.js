@@ -43,16 +43,23 @@ class NightlightDashboard extends LitElement {
     this._selectedEvent = null;
     this._showAddModal = false;
     this._selectedCalendarId = '';
+    this._lastResetDate = localStorage.getItem('nightlight_reset_date');
   }
 
   setConfig(config) {
-    if (!config.entities) throw new Error("Please define entities in YAML configuration.");
-    this.config = { title: "Family Hub", theme: "light", ...config };
+    if (!config.entities && !config.chores) throw new Error("Define entities or chores in YAML.");
+    this.config = { 
+      title: "Family Hub", 
+      theme: "light", 
+      chore_start: "06:00", 
+      chore_end: "09:00",
+      ...config 
+    };
     if (this._activeCalendars.length === 0 && config.entities) {
       this._activeCalendars = config.entities.map(e => e.entity);
     }
-    const firstCal = config.entities.find(e => e.entity.startsWith('calendar'));
-    this._selectedCalendarId = firstCal ? firstCal.entity : '';
+    // Check for Daily Reset
+    this._checkDailyReset();
   }
 
   // --- Data Management & Lifecycle ---
@@ -60,6 +67,18 @@ class NightlightDashboard extends LitElement {
   updated(changedProps) {
     if (changedProps.has('hass') || changedProps.has('_activeView') || changedProps.has('_calendarMode') || changedProps.has('_referenceDate')) {
       this._refreshData();
+    }
+  }
+
+  async _checkDailyReset() {
+    const today = new Date().toDateString();
+    if (this._lastResetDate !== today) {
+      const allChoreEntities = this.config.chores?.flatMap(kid => kid.items.map(i => i.entity)) || [];
+      if (allChoreEntities.length > 0) {
+        await this.hass.callService('input_boolean', 'turn_off', { entity_id: allChoreEntities });
+        localStorage.setItem('nightlight_reset_date', today);
+        this._lastResetDate = today;
+      }
     }
   }
 
@@ -133,10 +152,19 @@ class NightlightDashboard extends LitElement {
       this._activeCalendars.filter(i => i !== id) : [...this._activeCalendars, id];
   }
 
-  _toggleChore(entityId) {
+  _toggleChore(entityId, kidIndex) {
     const currentState = this.hass.states[entityId]?.state || 'off';
     const newState = currentState === 'on' ? 'off' : 'on';
     this.hass.callService('input_boolean', newState === 'on' ? 'turn_on' : 'turn_off', { entity_id: entityId });
+    
+    // Check for "All Done" helper
+    const kid = this.config.chores[kidIndex];
+    if (kid.all_done_helper) {
+       setTimeout(() => {
+         const allDone = kid.items.every(i => this.hass.states[i.entity]?.state === 'on');
+         this.hass.callService('input_boolean', allDone ? 'turn_on' : 'turn_off', { entity_id: kid.all_done_helper });
+       }, 500);
+    }
   }
 
   _handleMonthDayClick(dayNum, evsCount) {
@@ -314,7 +342,10 @@ class NightlightDashboard extends LitElement {
         ${days.map(day => html`
           <div class="meal-card-item">
             <div class="meal-day-label">${day}</div>
-            <textarea placeholder="What's for dinner?" @change="${(e) => this._saveMealState(day, e.target.value)}"></textarea>
+            <textarea 
+              placeholder="Tap to plan..." 
+              .value="${this._getData('meal_' + day)}"
+              @input="${(e) => this._saveData('meal_' + day, e.target.value)}"></textarea>
           </div>
         `)}
       </div>`;
@@ -323,15 +354,29 @@ class NightlightDashboard extends LitElement {
   _renderWhiteboard() {
     return html`
       <div class="whiteboard-container">
-        <div class="whiteboard-header">Family Whiteboard</div>
-        <textarea placeholder="Tap here to write notes for the family..."></textarea>
+        <div class="whiteboard-header">Family Notes</div>
+        <textarea 
+          placeholder="Leave a message for the family..."
+          .value="${this._getData('family_notes')}"
+          @input="${(e) => this._saveData('family_notes', e.target.value)}"></textarea>
       </div>`;
   }
 
-  _saveMealState(day, value) {
-     // Implementation for saving to HA helpers like input_text.dinner_monday
-     // Requires input_text entities to be mapped in config
-     console.log(`Saving ${value} for ${day}`);
+  _saveData(key, value) {
+    localStorage.setItem(`nightlight_${key}`, value);
+    this.requestUpdate();
+  }
+
+  _getData(key) {
+    return localStorage.getItem(`nightlight_${key}`) || '';
+  }
+
+  _handleMonthDayClick(dayNum, evsCount) {
+    if (!dayNum) return;
+    const newDate = new Date(this._referenceDate);
+    newDate.setDate(dayNum);
+    this._referenceDate = newDate;
+    if (evsCount > 2) this._calendarMode = 'day';
   }
 
   _renderCalendarView() {
@@ -422,47 +467,61 @@ class NightlightDashboard extends LitElement {
   }
 
   _renderAgenda() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     const fragmented = this._fragmentEvents(this._events);
-    const interleaved = fragmented.filter(e => this._activeCalendars.includes(e.origin))
-      .sort((a, b) => new Date(a.displayDate) - new Date(b.displayDate) || new Date(a.start.dateTime || a.start.date) - new Date(b.start.dateTime || b.start.date));
+    const interleaved = fragmented
+      .filter(e => this._activeCalendars.includes(e.origin))
+      .filter(e => new Date(e.displayDate) >= today) // Force Agenda to start TODAY
+      .sort((a, b) => new Date(a.displayDate) - new Date(b.displayDate) || 
+                      new Date(a.start.dateTime || a.start.date) - new Date(b.start.dateTime || b.start.date));
 
     return html`
       <div class="agenda-view">
-        ${interleaved.map(e => html`
-          <div class="agenda-row ${this._isPast(e) ? 'is-past' : ''}" @click="${() => this._selectedEvent = e}">
-            <div class="agenda-date">
-              <span class="day">${new Date(e.displayDate).getDate()}</span>
-              <span class="mon">${new Date(e.displayDate).toLocaleString('default', {month:'short'})}</span>
-            </div>
-            <div class="agenda-card" style="border-left: 6px solid ${e.color}">
-              <div class="ag-title">${e.summary}</div>
-              <div class="ag-meta">${e.friendly_name} • ${e.isAllDay ? 'All Day' : new Date(e.start.dateTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
-            </div>
-          </div>`)}
+        ${interleaved.map(e => {
+          const isPastFragment = new Date(e.displayDate) < today;
+          return html`
+            <div class="agenda-row ${isPastFragment ? 'is-past' : ''}" @click="${() => this._selectedEvent = e}">
+              <div class="agenda-date">
+                <span class="day">${new Date(e.displayDate).getDate()}</span>
+                <span class="mon">${new Date(e.displayDate).toLocaleString('default', {month:'short'})}</span>
+              </div>
+              <div class="agenda-card" style="border-left: 6px solid ${e.color}">
+                <div class="ag-title">${e.summary}</div>
+                <div class="ag-meta">${e.friendly_name} • ${e.isAllDay ? 'All Day' : new Date(e.start.dateTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+              </div>
+            </div>`;
+        })}
       </div>`;
   }
 
   _renderChoreDashboard() {
-    const kids = [
-      { name: 'Joel', img: 'https://assets.2.commercebuild.com/b522fd52e101edc926c3308c230445d5/contents/ckfinder/images/Category-Headers/2022-AFL-Geelong-Cats-Banner-1_0.jpg', prefix: 'joel' },
-      { name: 'Evie', img: 'https://as2.ftcdn.net/jpg/07/67/89/33/1000_F_767893338_diT9OBj46OkCz3cVMpJFeaAkvHYUTB3Y.jpg', prefix: 'evie' },
-      { name: 'Charlotte', img: 'https://png.pngtree.com/thumb_back/fh260/back_our/20190625/ourmid/pngtree-pink-mother-and-baby-cute-banner-image_253696.jpg', prefix: 'charlotte' }
-    ];
-    const chores = ['make_bed', 'eat_breakfast', 'brush_teeth_morning', 'get_dressed', 'pack_homework', 'pack_water_bottle', 'pack_lunch'];
+    const now = new Date();
+    const timeStr = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
+    
+    // Check time visibility
+    if (timeStr < this.config.chore_start || timeStr > this.config.chore_end) {
+      return html`<div class="chore-lock-msg">Chore tracking is only active between ${this.config.chore_start} and ${this.config.chore_end}.</div>`;
+    }
+
+    if (!this.config.chores) return html`<div>No chores configured. Add 'chores' to your YAML.</div>`;
 
     return html`
       <div class="chore-grid-locked">
-        ${kids.map(kid => html`
+        ${this.config.chores.map((kid, kIndex) => html`
           <div class="kid-chore-card">
-             <div class="kid-banner" style="background-image: url('${kid.img}')"><h3>${kid.name}</h3></div>
+             <div class="kid-banner" style="background-image: url('${kid.image}')">
+                <h3>${kid.name}</h3>
+                ${this.hass.states[kid.all_done_helper]?.state === 'on' ? html`<ha-icon class="medal" icon="mdi:medal"></ha-icon>` : ''}
+             </div>
              <div class="kid-list">
-                ${chores.map(type => {
-                  const ent = `input_boolean.${type}_${kid.prefix}`;
-                  const state = this.hass.states[ent]?.state || 'off';
+                ${kid.items.map(item => {
+                  const state = this.hass.states[item.entity]?.state || 'off';
                   return html`
-                    <div class="kid-item ${state === 'on' ? 'done' : ''}" @click="${() => this._toggleChore(ent)}">
+                    <div class="kid-item ${state === 'on' ? 'done' : ''}" @click="${() => this._toggleChore(item.entity, kIndex)}">
                        <ha-icon icon="${state === 'on' ? 'mdi:check-circle' : 'mdi:circle-outline'}"></ha-icon>
-                       <span>${type.replace(/_/g, ' ').toUpperCase()}</span>
+                       <span>${item.label}</span>
                     </div>`;
                 })}
              </div>
@@ -517,11 +576,11 @@ class NightlightDashboard extends LitElement {
     return css`
       :host { --accent: #7b61ff; --bg: #fdfdfd; --card: #fff; --text: #1a1a1b; --border: #eee; }
       .nightlight-hub.dark { --bg: #121212; --card: #1e1e1e; --text: #efefef; --border: #333; }
-      .nightlight-hub { display: grid; grid-template-columns: 100px 1fr; height: 100vh; background: var(--bg); color: var(--text); font-family: sans-serif; overflow: hidden; position: fixed; top: 0; left: 0; width: 100vw; z-index: 9999; }
+      .nightlight-hub { display: grid; grid-template-columns: 100px 1fr; height: calc(100vh - 100px); background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; border-radius: 20px; margin: 10px; }
       
-      .side-rail { background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 30px 0; z-index: 20; }
       .logo-area { color: var(--accent); margin-bottom: 40px; width: 35px; }
-      .nav-btn { background: none; border: none; padding: 20px 0; color: #bbb; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 5px; font-weight: bold; width: 100%; }
+      .side-rail { background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 30px 0; z-index: 20; }
+      .nav-btn { background: none; border: none; padding: 25px 0; color: #bbb; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; font-weight: bold; width: 100%; }
       .nav-btn.active { color: var(--accent); border-right: 4px solid var(--accent); background: rgba(123, 97, 255, 0.05); }
       .nav-btn svg { width: 26px; }
       
@@ -585,13 +644,16 @@ class NightlightDashboard extends LitElement {
       .kid-item.done { color: var(--accent); text-decoration: line-through; opacity: 0.6; background: rgba(123, 97, 255, 0.05); }
       .kid-item ha-icon { --mdc-icon-size: 24px; }
 
-      .agenda-view { height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-      .agenda-row { display: flex; gap: 15px; align-items: center; background: var(--card); padding: 12px; border-radius: 16px; border: 1px solid var(--border); cursor: pointer; }
-      .agenda-date { display: flex; flex-direction: column; align-items: center; width: 50px; }
-      .agenda-date .day { font-size: 1.8rem; font-weight: 900; }
-      .agenda-date .mon { font-size: 0.75rem; font-weight: 800; text-transform: uppercase; color: var(--accent); }
-      .agenda-card { flex-grow: 1; padding-left: 15px; }
-      .ag-title { font-size: 1.2rem; font-weight: 800; }
+      /* Agenda Polishing */
+      .agenda-view { height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+      .agenda-row { display: flex; gap: 20px; align-items: center; background: var(--card); padding: 15px; border-radius: 20px; border: 1px solid var(--border); cursor: pointer; transition: transform 0.2s; }
+      .agenda-row.is-past { opacity: 0.3; filter: grayscale(1); }
+      .agenda-date { display: flex; flex-direction: column; align-items: center; width: 60px; }
+      .agenda-date .day { font-size: 2rem; font-weight: 900; line-height: 1; }
+      .agenda-date .mon { font-size: 0.8rem; font-weight: 800; text-transform: uppercase; color: var(--accent); }
+      .agenda-card { flex-grow: 1; padding: 10px 20px; }
+      .ag-title { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.5px; }
+      .ag-meta { color: #888; font-weight: 600; margin-top: 4px; font-size: 0.9rem; }
       .ag-sub { color: #888; font-weight: 600; font-size: 0.85rem; }
 
       .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(10px); }
@@ -611,15 +673,20 @@ class NightlightDashboard extends LitElement {
 
       .fab { position: fixed; bottom: 40px; right: 40px; width: 85px; height: 85px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 3.5rem; cursor: pointer; box-shadow: 0 10px 25px rgba(123, 97, 255, 0.4); z-index: 100; }
     
-    /* New View Containers */
+    /* Modernized Meal Planner */
       .meal-grid-view { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; height: 100%; overflow-y: auto; padding: 10px; }
-      .meal-card-item { background: var(--card); border-radius: 20px; border: 1px solid var(--border); padding: 25px; display: flex; flex-direction: column; }
-      .meal-day-label { font-size: 1.6rem; font-weight: 900; color: var(--accent); margin-bottom: 15px; }
-      .meal-card-item textarea { flex-grow: 1; border: none; resize: none; font-size: 1.2rem; background: transparent; color: var(--text); outline: none; }
+      .meal-card-item { background: var(--card); border-radius: 24px; border: 1px solid var(--border); padding: 25px; display: flex; flex-direction: column; box-shadow: 0 4px 15px rgba(0,0,0,0.02); }
+      .meal-day-label { font-size: 1.4rem; font-weight: 900; color: var(--accent); margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }
+      .meal-card-item textarea { flex-grow: 1; border: none; resize: none; font-size: 1.2rem; background: transparent; color: var(--text); outline: none; font-weight: 500; line-height: 1.4; }
 
-      .whiteboard-container { height: 100%; display: flex; flex-direction: column; background: #fffcf0; border-radius: 30px; padding: 50px; border: 2px dashed #f0e68c; }
-      .whiteboard-header { font-size: 2.5rem; font-weight: 900; margin-bottom: 30px; color: #8b4513; font-family: 'Comic Sans MS', cursive; }
-      .whiteboard-container textarea { flex-grow: 1; border: none; background: transparent; font-size: 2rem; font-family: 'Comic Sans MS', cursive; outline: none; }
+      /* Stylish Whiteboard */
+      .whiteboard-container { height: 100%; display: flex; flex-direction: column; background: #fffcf0; border-radius: 32px; padding: 50px; border: 1px solid #f0e68c; box-shadow: inset 0 0 40px rgba(0,0,0,0.02); }
+      .whiteboard-header { font-size: 2.2rem; font-weight: 900; margin-bottom: 30px; color: #444; letter-spacing: -1px; }
+      .whiteboard-container textarea { flex-grow: 1; border: none; background: transparent; font-size: 1.8rem; color: #1a1a1b !important; outline: none; font-weight: 500; line-height: 1.5;}
+      
+      .nightlight-hub.dark .whiteboard-container { background: #2c2a1e; border-color: #444; }
+      .nightlight-hub.dark .whiteboard-header { color: #eee; }
+      .nightlight-hub.dark .whiteboard-container textarea { color: #efefef !important; }
       
       /* Time Grid with Date-Above-AllDay */
       .time-grid-root { display: flex; flex-direction: column; height: 100%; border: 1px solid var(--border); border-radius: 24px; overflow: hidden; background: var(--card); }
