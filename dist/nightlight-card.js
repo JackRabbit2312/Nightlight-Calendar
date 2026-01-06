@@ -358,17 +358,33 @@ class NightlightDashboard extends LitElement {
     }
   }
   
+ /**
+   * PERSISTENT MEAL PLANNER: Now uses HASS memory instead of browser local storage
+   */
   _renderMealPlanner() {
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const mealData = JSON.parse(this.hass.states[this.config.meal_entity]?.state || "{}");
+
     return html`
       <div class="meal-grid-view">
         ${days.map(day => html`
           <div class="meal-card-item">
             <div class="meal-day-label">${day}</div>
-            <textarea placeholder="What's for dinner?" .value="${this._getData('meal_' + day)}" @input="${(e) => this._saveData('meal_' + day, e.target.value)}"></textarea>
+            <textarea placeholder="What's for dinner?" 
+              .value="${mealData[day] || ''}" 
+              @change="${(e) => this._saveMeal(day, e.target.value)}"></textarea>
           </div>
         `)}
       </div>`;
+  }
+
+  async _saveMeal(day, value) {
+    const currentData = JSON.parse(this.hass.states[this.config.meal_entity]?.state || "{}");
+    currentData[day] = value;
+    await this.hass.callService('input_text', 'set_value', {
+      entity_id: this.config.meal_entity,
+      value: JSON.stringify(currentData)
+    });
   }
 
   _renderWhiteboard() {
@@ -512,7 +528,9 @@ class NightlightDashboard extends LitElement {
     const activePeriod = this.config.periods.find(p => {
       const [startH, startM] = p.start.split(':').map(Number);
       const [endH, endM] = p.end.split(':').map(Number);
-      return currentTime >= (startH * 60 + startM) && currentTime <= (endH * 60 + endM);
+      const startTotal = startH * 60 + startM;
+      const endTotal = endH * 60 + endM;
+      return currentTime >= startTotal && currentTime <= endTotal;
     });
 
     if (!activePeriod) return html`<div class="chore-lock-msg">No active chore period right now.</div>`;
@@ -538,8 +556,17 @@ class NightlightDashboard extends LitElement {
                     ${tasks.map(item => {
                       const isDone = this._getTodoStatus(kid.todo_list, item.label);
                       return html`
-                        <div class="kid-item ${isDone ? 'done' : ''}" @click="${() => this._toggleTodo(kid.todo_list, item.label, isDone)}">
-                           <ha-icon icon="${isDone ? 'mdi:check-circle' : 'mdi:circle-outline'}"></ha-icon>
+                        <div class="kid-item ${isDone ? 'done' : ''}" 
+                             @click="${(e) => {
+                                // Instant Visual Cue: shrink the item slightly on click
+                                e.currentTarget.style.transform = "scale(0.98)";
+                                setTimeout(() => e.currentTarget.style.transform = "scale(1)", 100);
+                                this._toggleTodo(kid.todo_list, item.label, isDone);
+                             }}">
+                           <ha-icon 
+                             icon="${isDone ? 'mdi:check-circle' : 'mdi:circle-outline'}"
+                             style="transition: color 0.3s ease;">
+                           </ha-icon>
                            <span>${item.label}</span>
                         </div>`;
                     })}
@@ -548,7 +575,7 @@ class NightlightDashboard extends LitElement {
           })}
         </div>
       </div>`;
-  }
+}
 
   _renderModal() {
     return html`
@@ -667,8 +694,9 @@ class NightlightDashboard extends LitElement {
 
       .kid-list { padding: 20px; display: flex; flex-direction: column; gap: 10px; }
       .kid-item { display: flex; align-items: center; gap: 15px; padding: 16px; border-radius: 18px; cursor: pointer; color: var(--text); font-weight: 800; border: 1px solid transparent; transition: 0.2s; background: rgba(0,0,0,0.02); }
-      .kid-item.done { color: var(--accent); background: rgba(123, 97, 255, 0.08); opacity: 0.6; }
-      .kid-item ha-icon { --mdc-icon-size: 28px; }
+      .kid-item:active { background: rgba(123, 97, 255, 0.15); transform: scale(0.96); }
+      .kid-item.done { color: var(--accent); background: rgba(123, 97, 255, 0.08); opacity: 0.6; transform: scale(1.1); }
+      .kid-item ha-icon { --mdc-icon-size: 28px; transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
       .chore-lock-msg {height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;color: var(--secondary-text-color); font-size: 1.5rem; font-weight: 700;}
       .chore-lock-msg::before { content: '🔒'; font-size: 4rem; }
       
@@ -966,4 +994,5 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
