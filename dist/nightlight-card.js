@@ -175,25 +175,25 @@ class NightlightDashboard extends LitElement {
   }
 
   async _submitEvent() {
-    const summary = this.shadowRoot.getElementById('new_summary').value;
-    const date = this.shadowRoot.getElementById('new_date').value;
-    const startT = this.shadowRoot.getElementById('new_start').value;
-    const endT = this.shadowRoot.getElementById('new_end').value;
+    const root = this.shadowRoot;
+    const summary = root.getElementById('new_summary').value;
+    const date = root.getElementById('new_date').value;
+    const startT = root.getElementById('new_start').value;
+    const endT = root.getElementById('new_end').value;
+    const calendar = root.getElementById('new_calendar').value;
 
-    if (!summary || !date || !startT || !endT) return alert("Please fill all fields.");
+    if (!summary || !date || !calendar) return;
 
     try {
       await this.hass.callService('calendar', 'create_event', {
-        entity_id: this._selectedCalendarId,
+        entity_id: calendar,
         summary: summary,
         start_date_time: `${date}T${startT}:00`,
         end_date_time: `${date}T${endT}:00`,
       });
       this._showAddModal = false;
       this._refreshData();
-    } catch (err) { 
-      alert("Error saving event to Home Assistant."); 
-    }
+    } catch (e) { console.error(e); }
   }
 
   // --- Specialized Utility Logic ---
@@ -547,21 +547,20 @@ class NightlightDashboard extends LitElement {
           <div class="modal-header" style="background: var(--accent)"><h2>New Family Event</h2></div>
           <div class="modal-content">
             <div class="form-grid">
-              <input id="new_summary" type="text" placeholder="Summary" class="full-width">
-              <input id="new_date" type="date" value="${new Date().toISOString().split('T')[0]}" class="full-width">
-              <div class="input-group"><label>Start</label><input id="new_start" type="time" value="10:00"></div>
-              <div class="input-group"><label>End</label><input id="new_end" type="time" value="11:00"></div>
-              <div class="input-group full-width">
-                <label>Calendar Target</label>
-                <select @change="${e => this._selectedCalendarId = e.target.value}">
-                  ${this.config.entities.filter(e => e.entity.startsWith('calendar')).map(ent => html`<option value="${ent.entity}">${ent.entity}</option>`)}
-                </select>
+              <ha-textfield id="new_summary" label="Event Title" class="full-width"></ha-textfield>
+              <ha-textfield id="new_date" type="date" label="Date" .value="${new Date().toISOString().split('T')[0]}" class="full-width"></ha-textfield>
+              <div class="side-by-side">
+                <ha-textfield id="new_start" type="time" label="Start" .value="09:00"></ha-textfield>
+                <ha-textfield id="new_end" type="time" label="End" .value="10:00"></ha-textfield>
               </div>
+              <ha-select id="new_calendar" label="Target Calendar" class="full-width">
+                ${(this.config.entities || []).map(ent => html`<mwc-list-item value="${ent.entity}">${ent.entity}</mwc-list-item>`)}
+              </ha-select>
             </div>
           </div>
           <div class="modal-actions">
-             <button class="btn-cancel" @click="${() => this._showAddModal = false}">Cancel</button>
-             <button class="btn-save" @click="${this._submitEvent}">Create</button>
+             <mwc-button @click="${() => this._showAddModal = false}">Cancel</mwc-button>
+             <mwc-button raised @click="${this._submitEvent}">Create Event</mwc-button>
           </div>
         </div>
       </div>`;
@@ -702,6 +701,7 @@ class NightlightCardEditor extends LitElement {
   _entitiesChanged(ev) {
     const newEntityList = ev.detail.value;
     const current = this._config.entities || [];
+    // Allows full Add/Edit/Delete by re-mapping only selected items
     const entities = newEntityList.map(entId => {
       const existing = current.find(e => e.entity === entId);
       return existing ? { ...existing } : { entity: entId, color: '#7b61ff', picture: '' };
@@ -777,6 +777,13 @@ class NightlightCardEditor extends LitElement {
     const chores = JSON.parse(JSON.stringify(this._config.chores || []));
     chores[kIdx].items[iIdx][prop] = value;
     this._updateConfig({ chores });
+  }
+  
+  _toggleChore(entityId) {
+    if (!entityId || !this.hass.states[entityId]) return;
+    const domain = entityId.split('.')[0];
+    const service = this.hass.states[entityId].state === 'on' ? 'turn_off' : 'turn_on';
+    this.hass.callService(domain, service, { entity_id: entityId });
   }
 
   render() {
