@@ -642,6 +642,8 @@ class NightlightDashboard extends LitElement {
         --secondary-text: var(--secondary-text-color); 
         --border: var(--divider-color); 
         --gold: #ffd700; 
+        /* HA App Header height safety */
+        --ha-header: 56px;
       }
 
       /* Global Layout Fixes */
@@ -649,7 +651,8 @@ class NightlightDashboard extends LitElement {
       .nightlight-hub { 
         display: grid; 
         grid-template-columns: 80px 1fr; 
-        height: 100vh; 
+        /* HEIGHT FIX: Total screen size less HA top panel */
+        height: calc(100vh - var(--ha-header, 56px)); 
         background: var(--bg); 
         color: var(--text); 
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
@@ -749,11 +752,13 @@ class NightlightDashboard extends LitElement {
       .axis-placeholder { width: 50px; border-right: 1px solid var(--border); }
       .date-grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; height: 40px; }
       .header-cell { display: flex; align-items: center; justify-content: center; font-weight: 900; color: var(--text); border-right: 1px solid var(--border); font-size: 0.7rem; }
-      .all-day-sync-row { display: flex; border-bottom: 2px solid var(--border); background: var(--bg); flex-shrink: 0; }
-      .axis-label-blank { width: 50px; border-right: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.6rem; font-weight: 900; color: #bbb; text-transform: uppercase; }
-      .ad-grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; padding: 4px; gap: 4px; }
-      .ad-col { min-height: 30px; display: flex; flex-direction: column; gap: 2px; }
-      .ad-pill { padding: 3px 6px; border-radius: 4px; color: #fff; font-size: 0.6rem; font-weight: 800; white-space: nowrap; overflow: hidden; }
+      
+      /* SHRUNK ALL DAY SECTION */
+      .all-day-sync-row { display: flex; border-bottom: 2px solid var(--border); background: var(--bg); flex-shrink: 0; min-height: 25px; }
+      .axis-label-blank { width: 50px; border-right: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.5rem; font-weight: 900; color: #bbb; text-transform: uppercase; }
+      .ad-grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; padding: 2px; gap: 2px; }
+      .ad-col { min-height: 20px; display: flex; flex-direction: column; gap: 2px; }
+      .ad-pill { padding: 2px 4px; border-radius: 3px; color: #fff; font-size: 0.55rem; font-weight: 800; white-space: nowrap; overflow: hidden; }
       
       .main-scroll-sync { display: flex; flex-grow: 1; overflow-y: auto; overflow-x: hidden; }
       .time-axis-fixed { width: 50px; border-right: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
@@ -804,7 +809,7 @@ class NightlightDashboard extends LitElement {
         font-weight: 800; 
         border: 1px solid transparent; 
         background: rgba(0,0,0,0.02); 
-        pointer-events: auto; /* Fix for unclickable chores */
+        pointer-events: auto; /* IMPORTANT FIX */
       }
       .kid-item:active { background: rgba(123, 97, 255, 0.15); transform: scale(0.97); }
       .kid-item.done { color: var(--accent); background: rgba(123, 97, 255, 0.08); opacity: 0.6; }
@@ -821,7 +826,7 @@ class NightlightDashboard extends LitElement {
       .ag-title { font-size: 1rem; font-weight: 800; }
       .ag-meta { color: #888; font-weight: 600; font-size: 0.75rem; }
 
-      /* Compact FAB Button (50% size) */
+      /* COMPACT FAB BUTTON: Shrink by 50% */
       .fab { 
         position: fixed; 
         bottom: 25px; 
@@ -841,15 +846,16 @@ class NightlightDashboard extends LitElement {
         justify-content: center;
       }
       
+      /* COMPACT ADD MODAL FOR MOBILE */
       .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 3000; backdrop-filter: blur(10px); }
-      .modal-body { background: var(--card); width: 90%; max-width: 450px; border-radius: 24px; overflow: hidden; box-shadow: 0 15px 50px rgba(0,0,0,0.3); }
-      .modal-header { padding: 20px; color: #fff; text-align: center; }
-      .modal-content { padding: 20px; font-size: 0.9rem; line-height: 1.4; }
-      .modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 15px 25px; border-top: 1px solid var(--border); }
+      .modal-body { background: var(--card); width: 90%; max-width: 400px; border-radius: 20px; overflow: hidden; box-shadow: 0 15px 50px rgba(0,0,0,0.3); }
+      .modal-header { padding: 15px; color: #fff; text-align: center; }
+      .modal-content { padding: 15px; font-size: 0.85rem; line-height: 1.3; }
+      .modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 10px 20px; border-top: 1px solid var(--border); }
       
-      .form-grid { display: flex; flex-direction: column; gap: 10px; }
+      .form-grid { display: flex; flex-direction: column; gap: 8px; }
       .full-width { width: 100%; }
-      .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
       .meal-grid-view { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; height: 100%; overflow-y: auto; padding: 5px; }
       .meal-card-item { background: var(--card); border-radius: 16px; border: 1px solid var(--border); padding: 15px; display: flex; flex-direction: column; }
@@ -1118,6 +1124,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
