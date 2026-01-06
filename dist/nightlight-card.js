@@ -538,7 +538,6 @@ class NightlightDashboard extends LitElement {
     const now = new Date();
     const currentTime = now.getHours() * 60 + now.getMinutes();
     const currentUser = this.hass.user.name;
-    const isDone = this._getTodoStatus(kid.todo_list, item.label);
 
     const activePeriod = this.config.periods.find(p => {
       const [startH, startM] = p.start.split(':').map(Number);
@@ -1119,6 +1118,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
