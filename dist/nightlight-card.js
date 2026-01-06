@@ -631,13 +631,13 @@ class NightlightCardEditor extends LitElement {
   _removeKid(idx) {
     const chores = [...(this._config.chores || [])];
     chores.splice(idx, 1);
-    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, chores } }, bubbles: true, composed: true }));
+    this._updateConfig({ chores });
   }
 
   _kidPropertyChanged(idx, prop, value) {
     const chores = JSON.parse(JSON.stringify(this._config.chores || []));
     chores[idx][prop] = value;
-    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, chores } }, bubbles: true, composed: true }));
+    this._updateConfig({ chores });
   }
 
   _addChoreItem(kidIdx) {
@@ -653,7 +653,7 @@ class NightlightCardEditor extends LitElement {
   _removeChoreItem(kidIdx, itemIdx) {
     const chores = JSON.parse(JSON.stringify(this._config.chores || []));
     chores[kidIdx].items.splice(itemIdx, 1);
-    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, chores } }, bubbles: true, composed: true }));
+    this._updateConfig({ chores });
   }
 
   _choreItemChanged(kidIdx, itemIdx, prop, value) {
@@ -756,6 +756,6 @@ customElements.define("nightlight-card-editor", NightlightCardEditor);
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "nightlight-calendar-card",
-  name: "Nightlight Hub v1.2.4",
-  description: "Structural Repair Master Build: Corrected Editor, Chores, and Persistence."
+  name: "Nightlight Hub v1.3.1",
+  description: "Add-on Architecture Alpha: Multi-file setup with Advanced Chores GUI."
 });
