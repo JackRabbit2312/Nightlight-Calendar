@@ -769,8 +769,9 @@ class NightlightDashboard extends LitElement {
       .view-switcher button { border: none; background: transparent; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: 800; color: #666; font-size: 0.65rem; }
       .view-switcher button.active { background: var(--card); color: var(--text); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
       .persona-filters { display: flex; gap: 6px; }
-      .persona { width: 32px; height: 32px; border-radius: 50%; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 900; cursor: pointer; overflow: hidden; }
+      .persona { width: 32px; height: 32px; border-radius: 50%; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 900; cursor: pointer; overflow: hidden; transition: all 0.3s ease; }
       .persona img { width: 100%; height: 100%; object-fit: cover; }
+      .persona.inactive { opacity: 0.2 !important; filter: grayscale(1) !important; background: #444 !important; }
       .today-btn { background: var(--accent); color: #fff; border: none; padding: 6px 14px; border-radius: 10px; font-weight: 800; cursor: pointer; white-space: nowrap; font-size: 0.75rem; }
 
       .content-area { flex-grow: 1; height: 0; overflow-y: auto; display: flex; flex-direction: column; position: relative; z-index: 1; }
@@ -982,6 +983,24 @@ class NightlightCardEditor extends LitElement {
     periods[idx][field] = value;
     this._updateConfig({ periods });
   }
+  
+  _addNavLink() {
+    const navigation = [...(this._config.navigation || [])];
+    navigation.push({ name: "New Link", icon: "mdi:link", path: "/dashboard/0" });
+    this._updateConfig({ navigation });
+  }
+
+  _removeNavLink(idx) {
+    const navigation = [...(this._config.navigation || [])];
+    navigation.splice(idx, 1);
+    this._updateConfig({ navigation });
+  }
+
+  _navPropChanged(idx, prop, value) {
+    const navigation = JSON.parse(JSON.stringify(this._config.navigation || []));
+    navigation[idx][prop] = value;
+    this._updateConfig({ navigation });
+  }
 
   _addKid() {
     const chores = [...(this._config.chores || [])];
@@ -1108,6 +1127,33 @@ class NightlightCardEditor extends LitElement {
           </div>
         </ha-expansion-panel>
 
+        <ha-expansion-panel header="Sidebar Navigation" outlined>
+          <div class="panel-content">
+            <p style="font-size: 0.8rem; color: var(--secondary-text-color); margin-bottom: 10px;">
+              Add custom shortcut buttons to your side panel (e.g., Media, Security).
+            </p>
+            ${(this._config.navigation || []).map((nav, idx) => html`
+              <div class="kid-box" style="margin-bottom: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                  <ha-textfield label="Button Name" .value="${nav.name}" style="flex-grow: 1;"
+                    @input="${e => this._navPropChanged(idx, 'name', e.target.value)}"></ha-textfield>
+                  <ha-icon-button @click="${() => this._removeNavLink(idx)}">
+                    <ha-icon icon="mdi:delete"></ha-icon>
+                  </ha-icon-button>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+                  <ha-textfield label="Icon (mdi:icon)" .value="${nav.icon}" 
+                    @input="${e => this._navPropChanged(idx, 'icon', e.target.value)}"></ha-textfield>
+                  <ha-textfield label="URL Path" .value="${nav.path}" 
+                    @input="${e => this._navPropChanged(idx, 'path', e.target.value)}"></ha-textfield>
+                </div>
+              </div>
+            `)}
+            <mwc-button raised class="mush-btn" @click="${this._addNavLink}">+ ADD NAV LINK</mwc-button>
+          </div>
+        </ha-expansion-panel>
+
         <ha-expansion-panel header="Persona Styling" outlined>
           <div class="panel-content">
             <ha-entities-picker .hass="${this.hass}" .includeDomains="${['calendar']}" .value="${this._config.entities?.map(e => e.entity) || []}" @value-changed="${this._entitiesChanged}"></ha-entities-picker>
@@ -1168,9 +1214,3 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
-
-
-
-
-
-
