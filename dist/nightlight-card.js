@@ -944,10 +944,19 @@ class NightlightCardEditor extends LitElement {
   _entitiesChanged(ev) {
     const newEntityList = ev.detail.value;
     const current = this._config.entities || [];
+    
+    // We filter out any entities removed via the picker
     const entities = newEntityList.map(entId => {
       const existing = current.find(e => e.entity === entId);
       return existing ? { ...existing } : { entity: entId, color: '#7b61ff', picture: '' };
     });
+    
+    this._updateConfig({ entities });
+  }
+  
+  _removeEntity(idx) {
+    const entities = [...(this._config.entities || [])];
+    entities.splice(idx, 1);
     this._updateConfig({ entities });
   }
 
@@ -1156,23 +1165,38 @@ class NightlightCardEditor extends LitElement {
 
         <ha-expansion-panel header="Persona Styling" outlined>
           <div class="panel-content">
-            <ha-entities-picker .hass="${this.hass}" .includeDomains="${['calendar']}" .value="${this._config.entities?.map(e => e.entity) || []}" @value-changed="${this._entitiesChanged}"></ha-entities-picker>
+            <ha-entities-picker 
+              .hass="${this.hass}" 
+              .includeDomains="${['calendar']}" 
+              .value="${this._config.entities?.map(e => e.entity) || []}" 
+              @value-changed="${this._entitiesChanged}">
+            </ha-entities-picker>
+
             ${(this._config.entities || []).map((ent, idx) => html`
-              <div class="persona-row">
-                <div class="persona-header">
-                  <strong>${ent.entity}</strong>
-                  <div>
+              <div class="persona-row" style="border: 1px solid var(--divider-color); padding: 10px; margin-top: 10px; border-radius: 8px;">
+                <div class="persona-header" style="display: flex; justify-content: space-between; align-items: center; gap: 5px;">
+                  <strong style="font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${ent.entity}</strong>
+                  
+                  <div style="display: flex; align-items: center;">
                     <ha-icon-button @click="${() => this._moveEntity(idx, -1)}" .disabled="${idx === 0}">
                       <ha-icon icon="mdi:arrow-up"></ha-icon>
                     </ha-icon-button>
                     <ha-icon-button @click="${() => this._moveEntity(idx, 1)}" .disabled="${idx === this._config.entities.length - 1}">
                       <ha-icon icon="mdi:arrow-down"></ha-icon>
                     </ha-icon-button>
+                    
+                    <ha-icon-button @click="${() => this._removeEntity(idx)}" style="color: var(--error-color, #db4437);">
+                      <ha-icon icon="mdi:delete"></ha-icon>
+                    </ha-icon-button>
                   </div>
                 </div>
-                <div class="controls">
-                  <input type="color" .value="${ent.color}" @input="${e => this._entityPropertyChanged(idx, 'color', e.target.value)}">
-                  <ha-textfield label="Picture URL" .value="${ent.picture || ''}" @input="${e => this._entityPropertyChanged(idx, 'picture', e.target.value)}"></ha-textfield>
+
+                <div class="controls" style="display: grid; grid-template-columns: 40px 1fr; gap: 10px; align-items: center; margin-top: 8px;">
+                  <input type="color" .value="${ent.color}" 
+                    @input="${e => this._entityPropertyChanged(idx, 'color', e.target.value)}"
+                    style="width: 100%; height: 35px; padding: 0; border-radius: 4px; border: 1px solid var(--divider-color); cursor: pointer;">
+                  <ha-textfield label="Picture URL" .value="${ent.picture || ''}" 
+                    @input="${e => this._entityPropertyChanged(idx, 'picture', e.target.value)}"></ha-textfield>
                 </div>
               </div>`)}
           </div>
@@ -1214,3 +1238,9 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
+
+
+
+
+
