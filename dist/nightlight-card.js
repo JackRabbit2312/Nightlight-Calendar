@@ -280,6 +280,17 @@ class NightlightDashboard extends LitElement {
         ? this._referenceDate.toLocaleString('default', { month: 'long', year: 'numeric' })
         : this.config.title;
 
+    // 1. Core internal views
+    const coreNav = [
+        { id: 'calendar', name: 'Calendar', icon: 'mdi:calendar-month' },
+        { id: 'meals', name: 'Dinner', icon: 'mdi:silverware-fork-knife' },
+        { id: 'whiteboard', name: 'Notes', icon: 'mdi:note-edit' },
+        { id: 'chores', name: 'Chores', icon: 'mdi:check-all' }
+    ];
+
+    // 2. Custom buttons from your YAML
+    const customNav = this.config.navigation || [];
+
     return html`
       <div class="nightlight-hub ${this.config.theme} ${this._menuOpen ? 'menu-visible' : ''}">
         
@@ -293,26 +304,23 @@ class NightlightDashboard extends LitElement {
           </a>
 
           <div class="nav-items">
-            <button class="nav-btn ${this._activeView === 'calendar' ? 'active' : ''}" 
-              @click="${() => { this._activeView = 'calendar'; this._menuOpen = false; }}">
-               <ha-icon icon="mdi:calendar-month"></ha-icon>
-               <span>Calendar</span>
-            </button>
-            <button class="nav-btn ${this._activeView === 'meals' ? 'active' : ''}" 
-              @click="${() => { this._activeView = 'meals'; this._menuOpen = false; }}">
-               <ha-icon icon="mdi:silverware-fork-knife"></ha-icon>
-               <span>Dinner</span>
-            </button>
-            <button class="nav-btn ${this._activeView === 'whiteboard' ? 'active' : ''}" 
-              @click="${() => { this._activeView = 'whiteboard'; this._menuOpen = false; }}">
-               <ha-icon icon="mdi:note-edit"></ha-icon>
-               <span>Notes</span>
-            </button>
-            <button class="nav-btn ${this._activeView === 'chores' ? 'active' : ''}" 
-              @click="${() => { this._activeView = 'chores'; this._menuOpen = false; }}">
-               <ha-icon icon="mdi:check-all"></ha-icon>
-               <span>Chores</span>
-            </button>
+            ${coreNav.map(nav => html`
+              <button class="nav-btn ${this._activeView === nav.id ? 'active' : ''}" 
+                @click="${() => { this._activeView = nav.id; this._menuOpen = false; }}">
+                 <ha-icon icon="${nav.icon}"></ha-icon>
+                 <span>${nav.name}</span>
+              </button>
+            `)}
+
+            ${customNav.length > 0 ? html`<hr style="width: 50%; opacity: 0.1; margin: 10px 0;">` : ''}
+
+            ${customNav.map(nav => html`
+              <button class="nav-btn ${this._activeView === nav.name ? 'active' : ''}" 
+                @click="${() => { this._activeView = nav.name; this._menuOpen = false; }}">
+                 <ha-icon icon="${nav.icon}"></ha-icon>
+                 <span>${nav.name}</span>
+              </button>
+            `)}
           </div>
         </nav>
 
@@ -322,7 +330,6 @@ class NightlightDashboard extends LitElement {
               <ha-icon-button class="hamburger-menu" @click="${() => this._menuOpen = true}">
                 <ha-icon icon="mdi:menu"></ha-icon>
               </ha-icon-button>
-
               <h1>${headerTitle}</h1>
               <div class="meta-row">
                 <span class="clock">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
@@ -361,9 +368,20 @@ class NightlightDashboard extends LitElement {
         <button class="fab" @click="${() => { this._showAddModal = true; this.requestUpdate(); }}">+</button>
       </div>
     `;
-  }  
+  }
 
   _renderActiveModule() {
+    // 1. Check if the current view matches a custom navigation item
+    const customMatch = (this.config.navigation || []).find(n => n.name === this._activeView);
+
+    if (customMatch) {
+      return html`
+        <iframe src="${customMatch.path}${customMatch.path.includes('?') ? '&' : '?'}kiosk" 
+                style="width: 100%; height: 100%; border: none; border-radius: 20px; background: var(--card);">
+        </iframe>`;
+    }
+
+    // 2. Default Internal Switch
     switch(this._activeView) {
       case 'meals': return this._renderMealPlanner();
       case 'whiteboard': return this._renderWhiteboard();
