@@ -361,7 +361,7 @@ class NightlightDashboard extends LitElement {
         <button class="fab" @click="${() => { this._showAddModal = true; this.requestUpdate(); }}">+</button>
       </div>
     `;
-}
+  }  
 
   _renderActiveModule() {
     switch(this._activeView) {
@@ -723,6 +723,21 @@ class NightlightDashboard extends LitElement {
         /* Mobile padding adjustment (Target: 5px-15px) */
         .main-stage { padding: 8px !important; }
       }
+      
+      .nav-link-wrap {
+          text-decoration: none;
+          width: 100%;
+          display: block;
+        }
+
+        .custom-link {
+          color: #888; /* Slightly different color to distinguish from internal views */
+        }
+
+        .custom-link:hover {
+          background: rgba(123, 97, 255, 0.05);
+          color: var(--accent);
+        }
       
       .main-stage { padding: 15px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; overflow: hidden; }
       .top-bar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; flex-shrink: 0; z-index: 10; }
@@ -1135,7 +1150,6 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
-
 
 
 
