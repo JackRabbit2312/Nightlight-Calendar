@@ -455,71 +455,60 @@ class NightlightDashboard extends LitElement {
     });
   }
 
-  /**
-   * SYSTEM-BASED WHITEBOARD (v1.6.6)
-   * Uses a To-do list item to bypass the 255-character limit.
-   */
   _renderWhiteboard() {
     const entityId = this.config.notes_entity;
-    
-    // 1. Get the latest state from Home Assistant
     const todoState = this.hass.states[entityId];
     
-    if (!todoState) {
-      return html`<div class="whiteboard-container">Error: notes_entity (${entityId}) not found.</div>`;
-    }
+    if (!todoState) return html`<div class="whiteboard-container">Set notes_entity in YAML.</div>`;
 
-    // 2. Extract the items
+    // Retrieve items from attributes
     const items = todoState.attributes?.items || [];
-    const notesItem = items[0];
     
-    // 3. This value MUST be pulled from the entity every time
+    // Search specifically for an item that we use as the 'Paper'
+    // This prevents the 'adding a new line' bug
+    const notesItem = items.find(i => i.summary.includes('Notes')) || items[0];
     const currentText = notesItem ? notesItem.summary : "";
+
+    // Added a 'Last Saved' badge as requested
+    const lastUpdated = todoState.last_changed ? new Date(todoState.last_changed).toLocaleTimeString() : "--:--";
 
     return html`
       <div class="whiteboard-container">
-        <div class="whiteboard-header">Family Notes</div>
+        <div class="whiteboard-header">
+          Family Notes
+          <span class="save-badge">Last Sync: ${lastUpdated}</span>
+        </div>
         <textarea 
-          placeholder="Leave a message..." 
+          placeholder="Sammy, type here... (Long notes supported)" 
           .value="${currentText}" 
           @change="${(e) => this._saveNotes(entityId, notesItem, e.target.value)}">
         </textarea>
       </div>`;
   }
-  /**
- * SYSTEM-BASED SAVE (v1.6.7)
- * Saves long-form text by updating the summary of a To-do list item.
- */
-async _saveNotes(entityId, originalItem, newText) {
-  // Safety check: Ensure the entity exists before calling services
-  if (!entityId || !this.hass.states[entityId]) {
-    console.error("Nightlight: notes_entity not found.");
-    return;
-  }
 
-  try {
-    if (originalItem) {
-      // If an item exists, we use 'update_item' to RENAME it with the new text
-      await this.hass.callService('todo', 'update_item', {
-        entity_id: entityId,
-        item: originalItem.summary, // The old text we are searching for
-        rename: newText             // The new long-form text to save
-      });
-    } else {
-      // If the list is empty, we must 'add_item' to create the first note
-      await this.hass.callService('todo', 'add_item', {
-        entity_id: entityId,
-        item: newText
-      });
+  async _saveNotes(entityId, notesItem, newText) {
+    if (!entityId) return;
+
+    try {
+      // If an item exists, RENAME it. If not, ADD a permanent one
+      if (notesItem) {
+        await this.hass.callService('todo', 'update_item', {
+          entity_id: entityId,
+          item: notesItem.summary,
+          rename: newText
+        });
+      } else {
+        await this.hass.callService('todo', 'add_item', {
+          entity_id: entityId,
+          item: newText
+        });
+      }
+      // Force immediate UI update to show the text is retrieved
+      this.requestUpdate(); 
+    } catch (e) {
+      console.error("Notes Save Failed:", e);
     }
-
-    // Explicitly request an update to show the saved text immediately
-    this.requestUpdate();
-    
-  } catch (e) {
-    console.error("Nightlight: Error saving to To-do list.", e);
   }
-}
 
   _renderCalendarView() {
     if (this._calendarMode === 'month') return this._renderMonthGrid();
@@ -1004,10 +993,23 @@ async _saveNotes(entityId, originalItem, newText) {
       }
       
       .whiteboard-header { 
-        font-size: 1.4rem; 
+        display: flex; 
+        justify-content: space-between; 
+        align-items: center; 
+        font-size: 1.6rem; 
         font-weight: 900; 
-        margin-bottom: 10px; 
+        margin-bottom: 15px; 
         color: #444; 
+      }
+      
+      .save-badge { 
+        font-size: 0.65rem; 
+        font-weight: 800; 
+        color: var(--accent); 
+        background: rgba(123, 97, 255, 0.1); 
+        padding: 4px 8px; 
+        border-radius: 6px; 
+        text-transform: uppercase; 
       }
       
       .whiteboard-container textarea { 
@@ -1388,6 +1390,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
