@@ -780,120 +780,34 @@ class NightlightDashboard extends LitElement {
       </div>`;
   }
 
-  static get styles() {
+static get styles() {
     return css`
-      :host { 
-        --accent: #7b61ff; 
-        --bg: var(--primary-background-color); 
-        --card: var(--card-background-color); 
-        --text: var(--primary-text-color); 
-        --secondary-text: var(--secondary-text-color); 
-        --border: var(--divider-color); 
-        --gold: #ffd700; 
-        /* HA App Header height safety */
-        --ha-header: 56px;
-      }
-
-      /* Global Layout Fixes */
+      /* --- Base Variables & Theme - Common --- */
+      :host { --accent: #7b61ff; --bg: var(--primary-background-color); --card: var(--card-background-color); --text: var(--primary-text-color); --secondary-text: var(--secondary-text-color); --border: var(--divider-color); --gold: #ffd700; --ha-header: 56px; }
       .nightlight-hub.dark { --bg: #121212; --card: #1e1e1e; --text: #efefef; --border: #333; }
-      .nightlight-hub { 
-        display: grid; 
-        grid-template-columns: 80px 1fr; 
-        /* HEIGHT FIX: Total screen size less HA top panel */
-        height: calc(100vh - var(--ha-header, 56px)); 
-        background: var(--bg); 
-        color: var(--text); 
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
-        overflow: hidden; 
-      }
-      
+      .nightlight-hub { display: grid; grid-template-columns: 80px 1fr; height: calc(100vh - var(--ha-header, 56px)); background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
+
+      /* --- Sidebar & Navigation - Mobile Ready --- */
       .logo-link { color: var(--accent); text-decoration: none; cursor: pointer; display: block; }
       .logo-area { color: var(--accent); margin-bottom: 20px; width: 30px; }
-      
-      .side-rail { 
-        background: var(--card); 
-        border-right: 1px solid var(--border); 
-        display: flex; 
-        flex-direction: column; 
-        align-items: center; 
-        padding: 15px 0; 
-        z-index: 20; 
-      }
-
-      .nav-btn { 
-        background: none; 
-        border: none; 
-        padding: 15px 0; 
-        color: #bbb; 
-        cursor: pointer; 
-        display: flex; 
-        flex-direction: column; 
-        align-items: center; 
-        gap: 4px; 
-        font-weight: bold; 
-        width: 100%; 
-      }
+      .side-rail { background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 15px 0; z-index: 20; }
+      .nav-btn { background: none; border: none; padding: 15px 0; color: #bbb; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; font-weight: bold; width: 100%; position: relative; }
       .nav-btn.active { color: var(--accent); border-right: 3px solid var(--accent); background: rgba(123, 97, 255, 0.05); }
       .nav-btn ha-icon { --mdc-icon-size: 22px; }
-      
-      /* Sidebar Sandwich Logic */
       .hamburger-menu { display: none; margin-right: 10px; --mdc-icon-button-size: 40px; }
       .menu-close-btn { display: none; background: none; border: none; color: var(--text); font-size: 1.5rem; position: absolute; top: 15px; right: 15px; z-index: 1001; }
-      
-      @media (max-width: 768px) { 
-        .nightlight-hub { grid-template-columns: 1fr; } 
-        .hamburger-menu { display: inline-block; }
-        .side-rail { 
-          position: fixed; 
-          left: -100px; 
-          top: 0; 
-          bottom: 0; 
-          width: 80px; 
-          z-index: 2000; 
-          transition: left 0.3s ease; 
-          box-shadow: 5px 0 15px rgba(0,0,0,0.2); 
-        }
-        .side-rail.open { left: 0; }
-        .menu-close-btn { display: block; }
+      @media (max-width: 768px) { .nightlight-hub { grid-template-columns: 1fr; } .hamburger-menu { display: inline-block; } .side-rail { position: fixed; left: -100px; top: 0; bottom: 0; width: 80px; z-index: 2000; transition: left 0.3s ease; box-shadow: 5px 0 15px rgba(0,0,0,0.2); } .side-rail.open { left: 0; } .menu-close-btn { display: block; } .right-actions { overflow-x: auto; max-width: 100%; padding-bottom: 5px; display: flex; align-items: center; gap: 10px; } .view-switcher { flex-shrink: 0; } .top-bar h1 { font-size: 1.4rem; } .main-stage { padding: 8px !important; } }
+      .nav-link-wrap { text-decoration: none; width: 100%; display: block; }
+      .custom-link { color: #888; }
+      .custom-link:hover { background: rgba(123, 97, 255, 0.05); color: var(--accent); }
 
-        /* Fix clipping on right side for mobile header */
-        .right-actions { 
-          overflow-x: auto; 
-          max-width: 100%; 
-          padding-bottom: 5px; 
-          display: flex; 
-          align-items: center; 
-          gap: 10px;
-        }
-        .view-switcher { flex-shrink: 0; }
-        .top-bar h1 { font-size: 1.4rem; }
-        
-        /* Mobile padding adjustment (Target: 5px-15px) */
-        .main-stage { padding: 8px !important; }
-      }
-      
-      .nav-link-wrap {
-          text-decoration: none;
-          width: 100%;
-          display: block;
-        }
-
-        .custom-link {
-          color: #888; /* Slightly different color to distinguish from internal views */
-        }
-
-        .custom-link:hover {
-          background: rgba(123, 97, 255, 0.05);
-          color: var(--accent);
-        }
-      
+      /* --- Main Header & Stage --- */
       .main-stage { padding: 15px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; overflow: hidden; }
       .top-bar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; flex-shrink: 0; z-index: 10; }
       .top-bar h1 { font-size: 1.8rem; font-weight: 800; margin: 0; letter-spacing: -1px; white-space: nowrap; }
       .meta-row { display: flex; align-items: center; gap: 10px; margin-top: 5px; }
       .clock { font-size: 1rem; font-weight: 700; color: #888; }
       .nav-arrows button { background: var(--card); border: 1px solid var(--border); border-radius: 50%; width: 32px; height: 32px; cursor: pointer; color: var(--text); }
-      
       .right-actions { display: flex; align-items: center; gap: 15px; }
       .view-switcher { background: rgba(0,0,0,0.05); padding: 3px; border-radius: 10px; display: flex; white-space: nowrap; }
       .view-switcher button { border: none; background: transparent; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: 800; color: #666; font-size: 0.65rem; }
@@ -904,6 +818,7 @@ class NightlightDashboard extends LitElement {
       .persona.inactive { opacity: 0.2 !important; filter: grayscale(1) !important; background: #444 !important; }
       .today-btn { background: var(--accent); color: #fff; border: none; padding: 6px 14px; border-radius: 10px; font-weight: 800; cursor: pointer; white-space: nowrap; font-size: 0.75rem; }
 
+      /* --- Calendar Views (Monthly, Weekly, Agenda) --- */
       .content-area { flex-grow: 1; height: 0; overflow-y: auto; display: flex; flex-direction: column; position: relative; z-index: 1; }
       .month-wrapper { height: 100%; display: flex; flex-direction: column; }
       .labels-row { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; color: #bbb; font-weight: 800; font-size: 0.7rem; padding-bottom: 8px; }
@@ -913,20 +828,16 @@ class NightlightDashboard extends LitElement {
       .day-num { font-weight: 900; font-size: 1rem; }
       .ev-pill { margin-top: 2px; padding: 3px; border-radius: 4px; color: #fff; font-size: 0.6rem; font-weight: 800; white-space: nowrap; overflow: hidden; }
       .is-past { opacity: 0.3 !important; }
-
       .time-grid-root { display: flex; flex-direction: column; height: 100%; border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: var(--card); }
       .header-row-locked { display: flex; border-bottom: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
       .axis-placeholder { width: 50px; border-right: 1px solid var(--border); }
       .date-grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; height: 40px; }
       .header-cell { display: flex; align-items: center; justify-content: center; font-weight: 900; color: var(--text); border-right: 1px solid var(--border); font-size: 0.7rem; }
-      
-      /* SHRUNK ALL DAY SECTION (Weekly View) */
       .all-day-sync-row { display: flex; border-bottom: 2px solid var(--border); background: var(--bg); flex-shrink: 0; min-height: 20px; }
       .axis-label-blank { width: 50px; border-right: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.5rem; font-weight: 900; color: #bbb; text-transform: uppercase; }
       .ad-grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; padding: 2px; gap: 2px; }
       .ad-col { min-height: 20px; display: flex; flex-direction: column; gap: 2px; }
       .ad-pill { padding: 1px 4px; border-radius: 3px; color: #fff; font-size: 0.5rem; font-weight: 800; white-space: nowrap; overflow: hidden; height: 14px; line-height: 14px; }
-      
       .main-scroll-sync { display: flex; flex-grow: 1; overflow-y: auto; overflow-x: hidden; }
       .time-axis-fixed { width: 50px; border-right: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
       .time-mark { height: 80px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; color: #888; font-weight: 700; }
@@ -935,53 +846,6 @@ class NightlightDashboard extends LitElement {
       .hour-container { position: relative; height: 1920px; }
       .hour-box { height: 80px; border-bottom: 1px dotted var(--border); }
       .time-ev { position: absolute; left: 2px; right: 2px; padding: 6px; border-radius: 8px; color: #fff; font-size: 0.75rem; font-weight: 800; cursor: pointer; z-index: 2; }
-      
-      /* --- Chore Dashboard Fixes --- */
-      .chore-container { display: flex; flex-direction: column; height: 100%; position: relative; z-index: 5; }
-      .chore-grid-locked { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; overflow-y: auto; padding-bottom: 10px; }
-      .kid-chore-card { background: var(--card); border-radius: 20px; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.04); position: relative; }
-      .chore-icon.is-completed { color: #34c759 !important; transform: scale(1.15); }
-      .chore-icon {--mdc-icon-size: 28px;color: #bbb; transition: all 0.3s ease;}
-
-      .kid-item span {color: #1a1a1b; font-weight: 700;}
-      .kid-banner { height: 100px; background-size: 100% 100%; background-position: center; background-repeat: no-repeat; display: flex; align-items: flex-end; padding: 15px; color: #fff; position: relative; }
-      .kid-banner::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(transparent, rgba(0,0,0,0.7)); }
-      .kid-banner h3 { margin: 0; z-index: 1; font-size: 1.5rem; font-weight: 900; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
-      
-      /* Refined Ultra-Thin Announcer */
-      .period-announcer { text-align: right; font-weight: 800;text-transform: uppercase; letter-spacing: 1px; color: var(--accent); padding: 4px 12px; background: rgba(123, 97, 255, 0.08); border-radius: 6px; margin-bottom: 8px; font-size: 0.6rem; align-self: flex-end; }
-      
-      .medal { position: absolute; top: 15px; right: 15px; z-index: 2; --mdc-icon-size: 32px; color: var(--gold); filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.4)); animation: bounce 1s infinite alternate; }
-      @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-3px); } }
-
-      .kid-list { padding: 10px; display: flex; flex-direction: column; gap: 6px; }
-      .kid-item { 
-        display: flex; 
-        align-items: center; 
-        gap: 12px; 
-        padding: 12px; 
-        border-radius: 12px; 
-        cursor: pointer; 
-        color: var(--text); 
-        font-weight: 800; 
-        border: 1px solid transparent; 
-        background: rgba(0,0,0,0.02); 
-        pointer-events: auto; /* IMPORTANT FIX */
-      }
-      .kid-item:active { background: rgba(123, 97, 255, 0.15); transform: scale(0.97); }
-      
-      /* ENHANCED DONE STATE: High visibility checkmarks */
-      .kid-item.done { 
-        background: rgba(52, 199, 89, 0.15) !important; 
-        border: 1px solid rgba(52, 199, 89, 0.3);
-        opacity: 0.8; 
-      }
-      .kid-item.done span { text-decoration: line-through; color: var(--secondary-text-color); }
-      .kid-item.done ha-icon { color: #34c759 !important; }
-      
-      .kid-item ha-icon { --mdc-icon-size: 24px; transition: transform 0.2s; }
-      .chore-lock-msg { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--secondary-text-color); font-size: 1.2rem; font-weight: 700; }
-      
       .agenda-view { height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
       .agenda-row { display: flex; gap: 12px; align-items: center; background: var(--card); padding: 10px; border-radius: 12px; border: 1px solid var(--border); cursor: pointer; }
       .agenda-date { display: flex; flex-direction: column; align-items: center; width: 45px; }
@@ -991,194 +855,59 @@ class NightlightDashboard extends LitElement {
       .ag-title { font-size: 1rem; font-weight: 800; }
       .ag-meta { color: #888; font-weight: 600; font-size: 0.75rem; }
 
-      /* COMPACT FAB BUTTON: Shrink by 50% */
-      .fab { 
-        position: fixed; 
-        bottom: 25px; 
-        right: 25px; 
-        width: 42px; 
-        height: 42px; 
-        border-radius: 50%; 
-        background: var(--accent); 
-        color: #fff; 
-        border: none; 
-        font-size: 1.8rem; 
-        cursor: pointer; 
-        box-shadow: 0 5px 15px rgba(123, 97, 255, 0.4); 
-        z-index: 100;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      
-      /* COMPACT ADD MODAL FOR MOBILE */
+      /* --- Chore Dashboard - Structure & Banner --- */
+      .chore-container { display: flex; flex-direction: column; height: 100%; position: relative; z-index: 5; }
+      .chore-grid-locked { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; overflow-y: auto; padding-bottom: 10px; }
+      .kid-chore-card { background: var(--card); border-radius: 20px; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.04); position: relative; }
+      .kid-banner { height: 100px; background-size: 100% 100%; background-position: center; background-repeat: no-repeat; display: flex; align-items: flex-end; padding: 15px; color: #fff; position: relative; }
+      .kid-banner::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(transparent, rgba(0,0,0,0.7)); }
+      .kid-banner h3 { margin: 0; z-index: 1; font-size: 1.5rem; font-weight: 900; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
+      .period-announcer { text-align: right; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); padding: 4px 12px; background: rgba(123, 97, 255, 0.08); border-radius: 6px; margin-bottom: 8px; font-size: 0.6rem; align-self: flex-end; }
+      .medal { position: absolute; top: 15px; right: 15px; z-index: 2; --mdc-icon-size: 32px; color: var(--gold); filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.4)); animation: bounce 1s infinite alternate; }
+      @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-3px); } }
+
+      /* --- Chore Dashboard - Items (Light/Dark Ready) --- */
+      .kid-list { padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+      .kid-item { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; cursor: pointer; color: var(--text); font-weight: 800; border: 1px solid transparent; background: rgba(123, 97, 255, 0.03); transition: all 0.2s ease; }
+      .nightlight-hub.dark .kid-item { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); }
+      .kid-item:active { background: rgba(123, 97, 255, 0.15); transform: scale(0.97); }
+      .kid-item.done { background: rgba(52, 199, 89, 0.1) !important; border: 1px solid rgba(52, 199, 89, 0.3); opacity: 0.8; }
+      .nightlight-hub.dark .kid-item.done { background: rgba(52, 199, 89, 0.15) !important; }
+      .kid-item span { color: var(--text); font-weight: 700; transition: all 0.3s ease; }
+      .kid-item.done span { text-decoration: line-through !important; color: var(--secondary-text); }
+      .chore-icon { --mdc-icon-size: 26px; color: #888; transition: all 0.3s ease; }
+      .kid-item.done .chore-icon, .chore-icon.is-completed { color: #34c759 !important; transform: scale(1.1); }
+      .chore-lock-msg { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--secondary-text); font-size: 1.2rem; font-weight: 700; }
+
+      /* --- Whiteboard & Post-it Notes --- */
+      .whiteboard-grid-container { height: 100%; display: flex; flex-direction: column; padding: 10px; box-sizing: border-box; }
+      .whiteboard-header { display: flex; justify-content: space-between; align-items: center; font-size: 1.6rem; font-weight: 900; margin-bottom: 15px; color: var(--text); flex-shrink: 0; }
+      .post-it-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); grid-auto-rows: 200px; gap: 20px; overflow-y: auto; padding: 10px; flex-grow: 1; }
+      .post-it { background: #fff9c4; color: #000 !important; padding: 20px; min-height: 150px; border-radius: 2px; box-shadow: 3px 3px 10px rgba(0,0,0,0.1); position: relative; font-family: 'Comic Sans MS', cursive, sans-serif; font-weight: 700; display: flex; align-items: center; justify-content: center; text-align: center; transform: rotate(-1.5deg); }
+      .note-content { color: #000 !important; font-size: 1.2rem; line-height: 1.3; }
+      .post-it:nth-child(even) { transform: rotate(1.2deg); background: #e1f5fe; }
+      .post-it:nth-child(3n) { transform: rotate(-0.8deg); background: #f8bbd0; }
+      .post-it:hover { transform: rotate(0deg) scale(1.02); z-index: 10; }
+      .delete-note { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.05); border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; color: #888; }
+      .delete-note:hover { background: #ff5252; color: white; }
+      .add-note-inline { background: var(--accent); color: white; border: none; padding: 8px 16px; border-radius: 12px; font-size: 0.8rem; font-weight: 800; cursor: pointer; display: flex; align-items: center; gap: 5px; box-shadow: 0 4px 10px rgba(123, 97, 255, 0.3); }
+
+      /* --- Meal Planner & UI Overlays --- */
+      .meal-grid-view { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; height: 100%; overflow-y: auto; padding: 5px; }
+      .meal-card-item { background: var(--card); border-radius: 16px; border: 1px solid var(--border); padding: 15px; display: flex; flex-direction: column; }
+      .meal-day-label { font-size: 1.1rem; font-weight: 900; color: var(--accent); margin-bottom: 8px; }
+      .meal-card-item textarea { border: none; resize: none; font-size: 0.9rem; background: transparent; color: var(--text); outline: none; }
+      .alert-dot { position: absolute; top: 12px; right: 20px; width: 10px; height: 10px; background: #ff5252; border-radius: 50%; border: 2px solid var(--card); box-shadow: 0 0 10px rgba(255, 82, 82, 0.5); }
+      .fab { position: fixed; bottom: 25px; right: 25px; width: 42px; height: 42px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 1.8rem; cursor: pointer; box-shadow: 0 5px 15px rgba(123, 97, 255, 0.4); z-index: 100; display: flex; align-items: center; justify-content: center; }
       .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 3000; backdrop-filter: blur(10px); }
       .modal-body { background: var(--card); width: 90%; max-width: 400px; border-radius: 20px; overflow: hidden; box-shadow: 0 15px 50px rgba(0,0,0,0.3); }
       .modal-header { padding: 15px; color: #fff; text-align: center; }
       .modal-content { padding: 15px; font-size: 0.85rem; line-height: 1.3; }
       .modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 10px 20px; border-top: 1px solid var(--border); }
-      
       .form-grid { display: flex; flex-direction: column; gap: 8px; }
-      .full-width { width: 100%; }
       .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-
-      .meal-grid-view { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; height: 100%; overflow-y: auto; padding: 5px; }
-      .meal-card-item { background: var(--card); border-radius: 16px; border: 1px solid var(--border); padding: 15px; display: flex; flex-direction: column; }
-      .meal-day-label { font-size: 1.1rem; font-weight: 900; color: var(--accent); margin-bottom: 8px; }
-      .meal-card-item textarea { border: none; resize: none; font-size: 0.9rem; background: transparent; color: var(--text); outline: none; }
-
-      /* --- Whiteboard & Post-it Grid --- */
-      .whiteboard-grid-container {
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-        padding: 10px;
-        box-sizing: border-box;
-      }
-      
-      .whiteboard-header { 
-        display: flex; 
-        justify-content: space-between; 
-        align-items: center; 
-        font-size: 1.6rem; 
-        font-weight: 900; 
-        margin-bottom: 15px; 
-        color: #444; 
-        flex-shrink: 0;
-      }
-      
-      /* Enforce the grid behavior */
-      .post-it-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); /* Force multiple columns */
-        grid-auto-rows: 200px; /* Force consistent height */
-        gap: 20px;
-        overflow-y: auto;
-        padding: 10px;
-        flex-grow: 1;
-      }
-      
-      .post-it {
-        background: #fff9c4;
-        /* Change color here for better contrast */
-        color: #000000 !important; 
-        padding: 20px;
-        min-height: 150px;
-        border-radius: 2px;
-        box-shadow: 3px 3px 10px rgba(0,0,0,0.1);
-        position: relative;
-        font-family: 'Comic Sans MS', cursive, sans-serif;
-        
-        /* Ensure text is bold enough to read */
-        font-weight: 700; 
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-      }
-      
-      /* Ensure the note content specifically follows this */
-      .note-content {
-        color: #000000 !important;
-        font-size: 1.2rem;
-        line-height: 1.3;
-      }
-      
-      /* Sidebar Alert Dot Correction */
-      .nav-btn {
-        position: relative; /* This keeps the dot inside the button */
-      }
-      
-      .nav-btn .alert-dot {
-        position: absolute;
-        top: 8px;
-        right: 12px;
-        width: 10px;
-        height: 10px;
-        background: #ff5252;
-        border-radius: 50%;
-        border: 2px solid var(--card);
-      }
-      
-      /* Alternate colors and rotations for a natural look */
-      .post-it:nth-child(even) { 
-        transform: rotate(1.2deg); 
-        background: #e1f5fe; /* Soft blue */
-      }
-      
-      .post-it:nth-child(3n) { 
-        transform: rotate(-0.8deg); 
-        background: #f8bbd0; /* Soft pink */
-      }
-      
-      .post-it:hover {
-        transform: rotate(0deg) scale(1.02);
-        z-index: 10;
-      }
-      
-      .delete-note {
-        position: absolute;
-        top: 8px;
-        right: 8px;
-        background: rgba(0,0,0,0.05);
-        border: none;
-        border-radius: 50%;
-        width: 24px;
-        height: 24px;
-        cursor: pointer;
-        font-size: 0.8rem;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #888;
-        transition: background 0.2s;
-      }
-      
-      .delete-note:hover {
-        background: #ff5252;
-        color: white;
-      }
-      
-      .add-note-inline {
-        background: var(--accent);
-        color: white;
-        border: none;
-        padding: 8px 16px;
-        border-radius: 12px;
-        font-size: 0.8rem;
-        font-weight: 800;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        box-shadow: 0 4px 10px rgba(123, 97, 255, 0.3);
-      }
-      
-      /* Sidebar Alert Dot */
-      .alert-dot {
-        position: absolute;
-        top: 12px;
-        right: 20px;
-        width: 10px;
-        height: 10px;
-        background: #ff5252;
-        border-radius: 50%;
-        border: 2px solid var(--card);
-        box-shadow: 0 0 10px rgba(255, 82, 82, 0.5);
-      }
-      
-      /* Dark Mode Overrides */
-      .nightlight-hub.dark .whiteboard-grid-container { 
-        background: #2c2a1e; 
-        border-color: #444; 
-      }
-      
-      .nightlight-hub.dark .whiteboard-header { color: #eee; }
-      
-      .nightlight-hub.dark .post-it {
-        box-shadow: 3px 3px 15px rgba(0,0,0,0.4);
-      }
     `;
+  
   }
 }
 
@@ -1537,6 +1266,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
