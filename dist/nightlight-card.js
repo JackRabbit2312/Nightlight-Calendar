@@ -369,7 +369,22 @@ class NightlightDashboard extends LitElement {
 
             ${customNav.map(nav => html`
               <button class="nav-btn" 
-                      @click="${() => { window.location.href = nav.path; }}">
+                      @click="${() => {
+                        this.hass.callService('browser_mod', 'popup', {
+                          title: nav.name,
+                          size: 'fullscreen', // Best for tablets to mimic an "embedded" look
+                          content: {
+                            type: 'custom:layout-card',
+                            cards: [
+                              {
+                                type: 'iframe', // Embedding via browser_mod often bypasses the session isolation
+                                url: nav.path,
+                                aspect_ratio: '16:9'
+                              }
+                            ]
+                          }
+                        });
+                      }}">
                  <ha-icon icon="${nav.icon}"></ha-icon>
                  <span>${nav.name}</span>
               </button>
@@ -1291,5 +1306,6 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
+
 
 
