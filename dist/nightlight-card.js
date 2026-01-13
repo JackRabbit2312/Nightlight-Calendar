@@ -980,15 +980,17 @@ class NightlightDashboard extends LitElement {
       .meal-day-label { font-size: 1.1rem; font-weight: 900; color: var(--accent); margin-bottom: 8px; }
       .meal-card-item textarea { border: none; resize: none; font-size: 0.9rem; background: transparent; color: var(--text); outline: none; }
 
-      .whiteboard-container { 
-        height: 100%; 
-        display: flex; 
-        flex-direction: column; 
-        background: #fffcf0; 
-        border-radius: 20px; 
-        padding: 20px; 
-        border: 1px solid #f0e68c; 
+      /* --- Whiteboard & Post-it Grid --- */
+      .whiteboard-grid-container {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        background: #fffcf0; /* Paper-like background */
+        border-radius: 20px;
+        padding: 15px;
+        border: 1px solid #f0e68c;
         box-shadow: inset 0 0 40px rgba(0,0,0,0.02);
+        overflow: hidden;
       }
       
       .whiteboard-header { 
@@ -999,93 +1001,115 @@ class NightlightDashboard extends LitElement {
         font-weight: 900; 
         margin-bottom: 15px; 
         color: #444; 
+        flex-shrink: 0;
       }
       
-      .save-badge { 
-        font-size: 0.65rem; 
-        font-weight: 800; 
-        color: var(--accent); 
-        background: rgba(123, 97, 255, 0.1); 
-        padding: 4px 8px; 
-        border-radius: 6px; 
-        text-transform: uppercase; 
-      }
-      
-      .whiteboard-container textarea { 
-        flex-grow: 1; 
-        border: none; 
-        background: transparent; 
-        font-size: 1.2rem; 
-        color: #1a1a1b !important; 
-        outline: none; 
-        line-height: 1.4; 
-        font-family: inherit;
-        resize: none;
-      }
-
       .post-it-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 15px;
+        gap: 20px;
         padding: 10px;
-        overflow-y: auto;
+        overflow-y: auto; /* Allows scrolling through many notes */
+        flex-grow: 1;
       }
       
       .post-it {
-        background: #fff9c4; /* Classic yellow post-it */
+        background: #fff9c4; /* Classic yellow */
         color: #333;
-        padding: 15px;
-        min-height: 120px;
+        padding: 20px;
+        min-height: 150px;
         border-radius: 2px;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+        box-shadow: 3px 3px 10px rgba(0,0,0,0.1);
         position: relative;
-        font-family: 'Comic Sans MS', cursive, sans-serif; /* Optional for that note feel */
-        transform: rotate(-1deg);
+        font-family: 'Comic Sans MS', cursive, sans-serif;
+        transform: rotate(-1.5deg); /* Slight organic tilt */
+        transition: transform 0.2s ease-in-out;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        font-size: 1.1rem;
+        line-height: 1.3;
       }
       
-      .post-it:nth-child(even) { transform: rotate(1deg); background: #e1f5fe; /* Blue note */ }
+      /* Alternate colors and rotations for a natural look */
+      .post-it:nth-child(even) { 
+        transform: rotate(1.2deg); 
+        background: #e1f5fe; /* Soft blue */
+      }
+      
+      .post-it:nth-child(3n) { 
+        transform: rotate(-0.8deg); 
+        background: #f8bbd0; /* Soft pink */
+      }
+      
+      .post-it:hover {
+        transform: rotate(0deg) scale(1.02);
+        z-index: 10;
+      }
       
       .delete-note {
         position: absolute;
-        top: 5px;
-        right: 5px;
-        background: none;
+        top: 8px;
+        right: 8px;
+        background: rgba(0,0,0,0.05);
         border: none;
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
         cursor: pointer;
-        font-size: 1rem;
-        opacity: 0.3;
+        font-size: 0.8rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #888;
+        transition: background 0.2s;
       }
       
-      .alert-dot {
-        position: absolute;
-        top: 10px;
-        right: 25%;
-        width: 8px;
-        height: 8px;
+      .delete-note:hover {
         background: #ff5252;
-        border-radius: 50%;
-        border: 2px solid var(--card);
+        color: white;
       }
       
       .add-note-inline {
         background: var(--accent);
         color: white;
         border: none;
-        padding: 5px 10px;
-        border-radius: 5px;
-        font-size: 0.7rem;
+        padding: 8px 16px;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: 800;
         cursor: pointer;
         display: flex;
         align-items: center;
+        gap: 5px;
+        box-shadow: 0 4px 10px rgba(123, 97, 255, 0.3);
       }
-
-      .nightlight-hub.dark .whiteboard-container { 
+      
+      /* Sidebar Alert Dot */
+      .alert-dot {
+        position: absolute;
+        top: 12px;
+        right: 20px;
+        width: 10px;
+        height: 10px;
+        background: #ff5252;
+        border-radius: 50%;
+        border: 2px solid var(--card);
+        box-shadow: 0 0 10px rgba(255, 82, 82, 0.5);
+      }
+      
+      /* Dark Mode Overrides */
+      .nightlight-hub.dark .whiteboard-grid-container { 
         background: #2c2a1e; 
         border-color: #444; 
       }
       
       .nightlight-hub.dark .whiteboard-header { color: #eee; }
-      .nightlight-hub.dark .whiteboard-container textarea { color: #efefef !important; }
+      
+      .nightlight-hub.dark .post-it {
+        box-shadow: 3px 3px 15px rgba(0,0,0,0.4);
+      }
     `;
   }
 }
@@ -1445,6 +1469,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
