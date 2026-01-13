@@ -1067,13 +1067,28 @@ class NightlightDashboard extends LitElement {
       
       .post-it {
         background: #fff9c4;
+        /* Change color here for better contrast */
+        color: #000000 !important; 
         padding: 20px;
+        min-height: 150px;
         border-radius: 2px;
         box-shadow: 3px 3px 10px rgba(0,0,0,0.1);
         position: relative;
         font-family: 'Comic Sans MS', cursive, sans-serif;
-        transform: rotate(-1.5deg);
-        overflow: hidden; /* Prevent text from expanding the card */
+        
+        /* Ensure text is bold enough to read */
+        font-weight: 700; 
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+      }
+      
+      /* Ensure the note content specifically follows this */
+      .note-content {
+        color: #000000 !important;
+        font-size: 1.2rem;
+        line-height: 1.3;
       }
       
       /* Sidebar Alert Dot Correction */
@@ -1529,6 +1544,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
