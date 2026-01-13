@@ -1,6 +1,5 @@
 /**
- * Nightlight Dashboard (v1.4.0)
- * Senior Dev Lead: Rick P. | Melbourne
+ * Nightlight Dashboard (v1.6.8)
  * Features: To-do List Memory, User-Specific Views, Stretched Banners, Refined Announcer
  */
 
@@ -63,31 +62,54 @@ class NightlightDashboard extends LitElement {
   // --- Data Management & Lifecycle ---
 
   updated(changedProps) {
-    // 1. Check for chore resets whenever the HASS state updates
     if (changedProps.has('hass')) {
-      this._checkDailyReset(); 
+      this._checkDailyReset();
       
-      // NEW: Auto-refresh whiteboard if the notes entity changed in Home Assistant
+      // Auto-refresh whiteboard OR chores if their entities change
       const oldHass = changedProps.get('hass');
-      if (this._activeView === 'whiteboard' && 
-          oldHass && this.hass.states[this.config.notes_entity] !== oldHass.states[this.config.notes_entity]) {
-        this._fetchNotes(this.config.notes_entity);
+      if (oldHass) {
+        if (this._activeView === 'whiteboard' && this.hass.states[this.config.notes_entity] !== oldHass.states[this.config.notes_entity]) {
+          this._fetchNotes(this.config.notes_entity);
+        }
+        // Trigger chore refresh if any kid's to-do list updates
+        if (this._activeView === 'chores') {
+          this._fetchChoreData();
+        }
       }
     }
-  
-    // 2. Refresh calendar data if view/date changes
+
     if (changedProps.has('hass') || changedProps.has('_activeView') || 
         changedProps.has('_calendarMode') || changedProps.has('_referenceDate')) {
       this._refreshData();
     }
-  
-    // 3. Force re-render when switching tabs
+
     if (changedProps.has('_activeView')) {
       this.requestUpdate();
-      if (this._activeView === 'whiteboard') {
-         this._fetchNotes(this.config.notes_entity);
+      if (this._activeView === 'whiteboard') this._fetchNotes(this.config.notes_entity);
+      // Fetch fresh chore data immediately when switching to the tab
+      if (this._activeView === 'chores') this._fetchChoreData();
+    }
+  }
+
+  async _fetchChoreData() {
+    if (!this.hass || !this.config.chores) return;
+    
+    const allItems = [];
+    for (const kid of this.config.chores) {
+      if (kid.todo_list) {
+        try {
+          const result = await this.hass.callWS({
+            type: "todo/item/list",
+            entity_id: kid.todo_list,
+          });
+          // Tag items with their origin list so _getTodoStatus can find them
+          const taggedItems = (result.items || []).map(item => ({ ...item, list_id: kid.todo_list }));
+          allItems.push(...taggedItems);
+        } catch (e) { console.error("Chore fetch failed for", kid.todo_list, e); }
       }
     }
+    this._todoItems = allItems;
+    this.requestUpdate();
   }
 
   /**
@@ -119,25 +141,27 @@ class NightlightDashboard extends LitElement {
     }
   }
   
-  /**
-   * Helper: Reads item status from HASS state memory
+ /**
+   * Helper: Reads item status from the cached internal list
    */
   _getTodoStatus(entityId, taskLabel) {
-    const todoState = this.hass.states[entityId];
-    if (!todoState) return false;
-    const items = todoState.attributes?.items || [];
-    const item = items.find(i => i.summary.trim().toLowerCase() === taskLabel.trim().toLowerCase());
+    if (!this._todoItems) return false;
+    
+    // Find the item within the list specifically for this child
+    const item = this._todoItems.find(i => 
+      i.list_id === entityId && 
+      i.summary.trim().toLowerCase() === taskLabel.trim().toLowerCase()
+    );
+    
     return item ? item.status === 'completed' : false;
   }
-  
+
   /**
-   * Helper: Toggles a Todo list item on the server
+   * Helper: Toggles a Todo list item and refreshes the cache
    */
   async _toggleTodo(entityId, taskLabel, isDone) {
-    if (!entityId || !this.hass.states[entityId]) {
-      console.warn("Nightlight: Cannot toggle. Entity missing or invalid.");
-      return;
-    }
+    if (!entityId) return;
+
     const newStatus = isDone ? 'needs_action' : 'completed';
     try {
       await this.hass.callService('todo', 'update_item', {
@@ -145,6 +169,9 @@ class NightlightDashboard extends LitElement {
         item: taskLabel,
         status: newStatus
       });
+      
+      // CRITICAL: Refresh the data immediately so the UI stays in the "Done" state
+      await this._fetchChoreData();
     } catch (e) {
       console.error("Todo Toggle Failed:", e);
     }
@@ -687,9 +714,7 @@ class NightlightDashboard extends LitElement {
     const activePeriod = this.config.periods.find(p => {
       const [startH, startM] = p.start.split(':').map(Number);
       const [endH, endM] = p.end.split(':').map(Number);
-      const startTotal = startH * 60 + startM;
-      const endTotal = endH * 60 + endM;
-      return currentTime >= startTotal && currentTime <= endTotal;
+      return currentTime >= (startH * 60 + startM) && currentTime <= (endH * 60 + endM);
     });
 
     if (!activePeriod) return html`<div class="chore-lock-msg">No active chore period right now.</div>`;
@@ -1260,32 +1285,6 @@ customElements.define("nightlight-card-editor", NightlightCardEditor);
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "nightlight-calendar-card",
-  name: "Nightlight Hub v1.4.0",
+  name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
