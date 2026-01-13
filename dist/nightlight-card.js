@@ -715,22 +715,15 @@ class NightlightDashboard extends LitElement {
                     ${tasks.map(item => {
                       const isDone = this._getTodoStatus(kid.todo_list, item.label);
 
-                        return html`
-                          <div class="kid-item ${isDone ? 'done' : ''}" 
-                               @click="${(e) => {
-                                 // This provides the "slightly smaller" visual feedback you mentioned
-                                 e.currentTarget.style.transform = "scale(0.98)";
-                                 setTimeout(() => e.currentTarget.style.transform = "scale(1)", 100);
-                                 this._toggleTodo(kid.todo_list, item.label, isDone);
-                               }}">
-                            
-                            <ha-icon 
-                              icon="${isDone ? 'mdi:check-circle' : 'mdi:circle-outline'}"
-                              class="chore-icon ${isDone ? 'is-completed' : ''}">
-                            </ha-icon>
-                            
-                            <span>${item.label}</span>
-                          </div>`;
+                      return html`
+                        <div class="kid-item ${isDone ? 'done' : ''}" @click="...">
+                          <ha-icon 
+                            icon="${isDone ? 'mdi:check-circle' : 'mdi:circle-outline'}" 
+                            class="chore-icon">
+                          </ha-icon>
+                          <span>${item.label}</span>
+                        </div>
+                      `;
                     })}
                  </div>
               </div>`;
@@ -1266,6 +1259,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
