@@ -368,8 +368,16 @@ class NightlightDashboard extends LitElement {
             ${customNav.length > 0 ? html`<hr style="width: 50%; opacity: 0.1; margin: 10px 0;">` : ''}
 
             ${customNav.map(nav => html`
-              <button class="nav-btn ${this._activeView === nav.name ? 'active' : ''}" 
-                      @click="${() => { this._activeView = nav.name; this._menuOpen = false; }}">
+              <button class="nav-btn" 
+                      @click="${() => {
+                        this.hass.callService('browser_mod', 'popup', {
+                          title: nav.name,
+                          content: {
+                            type: 'custom:layout-card',
+                            cards: [{ type: 'custom:external-dashboard-card', url: nav.path }]
+                          }
+                        });
+                      }}">
                  <ha-icon icon="${nav.icon}"></ha-icon>
                  <span>${nav.name}</span>
               </button>
@@ -432,17 +440,19 @@ class NightlightDashboard extends LitElement {
   }
 
   _renderActiveModule() {
-    // 1. Check if the current view matches a custom navigation item
     const customMatch = (this.config.navigation || []).find(n => n.name === this._activeView);
-
+  
     if (customMatch) {
       return html`
-        <iframe src="${customMatch.path}${customMatch.path.includes('?') ? '&' : '?'}kiosk" 
-                style="width: 100%; height: 100%; border: none; border-radius: 20px; background: var(--card);">
-        </iframe>`;
+        <div class="unsupported-frame-msg">
+          <h2>Open ${customMatch.name} Dashboard</h2>
+          <p>Embedded views are restricted by the Android/iOS app security policies.</p>
+          <button class="today-btn" @click="${() => window.location.href = customMatch.path}">
+            Go to ${customMatch.name}
+          </button>
+        </div>`;
     }
-
-    // 2. Default Internal Switch
+  
     switch(this._activeView) {
       case 'meals': return this._renderMealPlanner();
       case 'whiteboard': return this._renderWhiteboard();
@@ -822,6 +832,7 @@ static get styles() {
       .nav-link-wrap { text-decoration: none; width: 100%; display: block; }
       .custom-link { color: #888; }
       .custom-link:hover { background: rgba(123, 97, 255, 0.05); color: var(--accent); }
+      .unsupported-frame-msg { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: var(--card); border-radius: 20px; color: var(--text); padding: 20px; }
 
       /* --- Main Header & Stage --- */
       .main-stage { padding: 15px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; overflow: hidden; }
@@ -1288,3 +1299,4 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
+
