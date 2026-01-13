@@ -319,7 +319,6 @@ class NightlightDashboard extends LitElement {
 
         <div class="nav-items">
           ${coreNav.map(nav => html`
-            // Inside your sidebar .nav-items loop
             <button class="nav-btn ${this._activeView === nav.id ? 'active' : ''}" 
                     style="position: relative;" 
                     @click="${() => { this._activeView = nav.id; this._menuOpen = false; }}">
@@ -466,11 +465,13 @@ class NightlightDashboard extends LitElement {
   const entityId = this.config.notes_entity;
   const stateObj = this.hass.states[entityId];
 
+  // 1. Safety check for the entity
   if (!stateObj) {
-    return html`<div class="whiteboard-grid-container">Please check notes_entity ID.</div>`;
+    return html`<div class="whiteboard-grid-container">Error: ${entityId} not found.</div>`;
   }
 
-  // 1. Correctly extract items from the todo list attributes
+  // 2. Fetch the actual list of items from the attributes
+  // Home Assistant stores the list content in attributes.items
   const items = stateObj.attributes.items || [];
 
   return html`
@@ -483,8 +484,9 @@ class NightlightDashboard extends LitElement {
       </header>
       
       <div class="post-it-grid">
-        ${items.length === 0 ? html`<div class="empty-msg">No active notes.</div>` : 
-          items.map(item => html`
+        ${items.length === 0 
+          ? html`<div class="empty-msg">No active notes. Add one above!</div>` 
+          : items.map(item => html`
             <div class="post-it">
               <button class="delete-note" @click="${() => this._deleteNote(entityId, item.summary)}">✕</button>
               <div class="note-content">${item.summary}</div>
@@ -990,11 +992,10 @@ class NightlightDashboard extends LitElement {
       /* --- Whiteboard & Post-it Grid --- */
       .whiteboard-grid-container {
         height: 100%;
-        max-height: calc(100vh - 120px); /* Keep it within the dashboard stage */
         display: flex;
         flex-direction: column;
-        padding: 15px;
-        overflow: hidden;
+        padding: 10px;
+        box-sizing: border-box;
       }
       
       .whiteboard-header { 
@@ -1008,42 +1009,43 @@ class NightlightDashboard extends LitElement {
         flex-shrink: 0;
       }
       
+      /* Enforce the grid behavior */
       .post-it-grid {
         display: grid;
-        /* Enforce small card sizes even if text is long */
-        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-        grid-auto-rows: min-content; 
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); /* Force multiple columns */
+        grid-auto-rows: 200px; /* Force consistent height */
         gap: 20px;
-        padding: 15px;
         overflow-y: auto;
+        padding: 10px;
         flex-grow: 1;
       }
       
       .post-it {
         background: #fff9c4;
         padding: 20px;
-        min-height: 180px;
-        max-height: 300px; /* Prevent massive scaling */
-        overflow-y: auto; /* Allow scrolling inside long notes */
         border-radius: 2px;
         box-shadow: 3px 3px 10px rgba(0,0,0,0.1);
         position: relative;
         font-family: 'Comic Sans MS', cursive, sans-serif;
         transform: rotate(-1.5deg);
+        overflow: hidden; /* Prevent text from expanding the card */
       }
-
-      /* Sidebar Alert Dot - Scoped to the button */
-        .nav-btn .alert-dot {
-          position: absolute;
-          top: 10px;
-          right: 15px;
-          width: 10px;
-          height: 10px;
-          background: #ff5252;
-          border-radius: 50%;
-          border: 2px solid var(--card);
-          z-index: 10;
-        }
+      
+      /* Sidebar Alert Dot Correction */
+      .nav-btn {
+        position: relative; /* This keeps the dot inside the button */
+      }
+      
+      .nav-btn .alert-dot {
+        position: absolute;
+        top: 8px;
+        right: 12px;
+        width: 10px;
+        height: 10px;
+        background: #ff5252;
+        border-radius: 50%;
+        border: 2px solid var(--card);
+      }
       
       /* Alternate colors and rotations for a natural look */
       .post-it:nth-child(even) { 
@@ -1482,6 +1484,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
