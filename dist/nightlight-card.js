@@ -959,9 +959,43 @@ class NightlightDashboard extends LitElement {
       .meal-day-label { font-size: 1.1rem; font-weight: 900; color: var(--accent); margin-bottom: 8px; }
       .meal-card-item textarea { border: none; resize: none; font-size: 0.9rem; background: transparent; color: var(--text); outline: none; }
 
-      .whiteboard-container { height: 100%; display: flex; flex-direction: column; background: #fffcf0; border-radius: 24px; padding: 25px; border: 1px solid #f0e68c; }
-      .whiteboard-header { font-size: 1.6rem; font-weight: 900; margin-bottom: 15px; color: #444; }
-      .whiteboard-container textarea { flex-grow: 1; border: none; background: transparent; font-size: 1.3rem; color: #1a1a1b !important; outline: none; line-height: 1.4; }
+      .whiteboard-container { 
+        height: 100%; 
+        display: flex; 
+        flex-direction: column; 
+        background: #fffcf0; 
+        border-radius: 20px; 
+        padding: 20px; 
+        border: 1px solid #f0e68c; 
+        box-shadow: inset 0 0 40px rgba(0,0,0,0.02);
+      }
+      
+      .whiteboard-header { 
+        font-size: 1.4rem; 
+        font-weight: 900; 
+        margin-bottom: 10px; 
+        color: #444; 
+      }
+      
+      .whiteboard-container textarea { 
+        flex-grow: 1; 
+        border: none; 
+        background: transparent; 
+        font-size: 1.2rem; 
+        color: #1a1a1b !important; 
+        outline: none; 
+        line-height: 1.4; 
+        font-family: inherit;
+        resize: none;
+      }
+
+      .nightlight-hub.dark .whiteboard-container { 
+        background: #2c2a1e; 
+        border-color: #444; 
+      }
+      
+      .nightlight-hub.dark .whiteboard-header { color: #eee; }
+      .nightlight-hub.dark .whiteboard-container textarea { color: #efefef !important; }
     `;
   }
 }
@@ -1321,6 +1355,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
