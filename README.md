@@ -1,4 +1,108 @@
-Nightlight Dashboard Card (v1.4.0)Nightlight Dashboard is a high-performance "Family Hub" card for Home Assistant, inspired by Skylight Calendar hardware. It consolidates calendars, meal planning, chore tracking, and family notes into a single, responsive interface.Specifically architected for Full HD (1080p) touch panels, it provides a clean, authoritative interface for family scheduling and multi-calendar management without external cloud dependencies.✨ Key FeaturesFunctional📅 Unified Calendar: Dynamic switching between Month, Week (Time-Grid), Day (Hourly), and Agenda views. Supports color-coding and on-the-fly "Persona" toggling.🧹 Smart Chores:Time-Gated Logic: Chores only appear during specific times (e.g., "Morning" vs "Evening").User Detection: Filters chores based on the logged-in HA user.Auto-Reset: Built-in logic automatically resets completed tasks to "needs action" the next day.🍽️ Meal Planner: A 7-day persistent menu planner stored in Home Assistant input_text helpers.📝 Digital Whiteboard: A "Post-it" style message board powered by Home Assistant To-Do lists.Technical⚡ Zero-Build Architecture: Delivered as a single-file Lit module for maximum portability.🔒 Secure Data Engine: Utilizes the Home Assistant callApi websocket for authenticated, local-only data retrieval.👆 Touch-First Design: Optimized hit-targets and momentum scrolling designed for wall-mounted kiosks.🖱️ Visual Editor: Fully configurable via the Lovelace UI visual editor—no YAML required.🛠️ InstallationMethod 1: HACS (Recommended)Open HACS in your Home Assistant instance.Click the three dots in the top right and select Custom repositories.Paste the URL: https://github.com/JackRabbit2312/Nightlight-Calendar/Select Lovelace as the category.Click Install.Method 2: Manual InstallationDownload the nightlight-card.js file.Upload it to your Home Assistant config/www/ folder (e.g., www/community/nightlight-ha-card/).Go to Settings > Dashboards > Three dots (top right) > Resources.Add a new resource:URL: /local/community/nightlight-ha-card/nightlight-card.jsType: JavaScript Module⚙️ Prerequisites (Required Helpers)To utilize the Hub features (Meals, Chores, Notes), you must create specific Helper entities in Settings > Devices & Services > Helpers.FeatureHelper TypeQuantityNaming ExampleMeal PlannerText (input_text)7 (One per day)input_text.dinner_mondayWhiteboardTo-Do List (todo)1todo.family_notesChoresTo-Do List (todo)1 per childtodo.kid_one_choresNote: You do not need to populate the Chore lists manually; the card manages items based on your config.📝 ConfigurationYou can configure the card entirely using the Visual Editor. However, for power users, here is the full YAML schema.type: custom:nightlight-calendar-card
+Nightlight Dashboard Card (v1.4.0)
+
+Nightlight Dashboard is a high-performance "Family Hub" card for Home Assistant, inspired by Skylight Calendar hardware. It consolidates calendars, meal planning, chore tracking, and family notes into a single, responsive interface.
+
+Specifically architected for Full HD (1080p) touch panels, it provides a clean, authoritative interface for family scheduling and multi-calendar management without external cloud dependencies.
+
+✨ Key Features
+
+Functional
+
+📅 Unified Calendar: Dynamic switching between Month, Week (Time-Grid), Day (Hourly), and Agenda views. Supports color-coding and on-the-fly "Persona" toggling.
+
+🧹 Smart Chores:
+
+Time-Gated Logic: Chores only appear during specific times (e.g., "Morning" vs "Evening").
+
+User Detection: Filters chores based on the logged-in HA user.
+
+Auto-Reset: Built-in logic automatically resets completed tasks to "needs action" the next day.
+
+🍽️ Meal Planner: A 7-day persistent menu planner stored in Home Assistant input_text helpers.
+
+📝 Digital Whiteboard: A "Post-it" style message board powered by Home Assistant To-Do lists.
+
+Technical
+
+⚡ Zero-Build Architecture: Delivered as a single-file Lit module for maximum portability.
+
+🔒 Secure Data Engine: Utilizes the Home Assistant callApi websocket for authenticated, local-only data retrieval.
+
+👆 Touch-First Design: Optimized hit-targets and momentum scrolling designed for wall-mounted kiosks.
+
+🖱️ Visual Editor: Fully configurable via the Lovelace UI visual editor—no YAML required.
+
+🛠️ Installation
+
+Method 1: HACS (Recommended)
+
+Open HACS in your Home Assistant instance.
+
+Click the three dots in the top right and select Custom repositories.
+
+Paste the URL: https://github.com/JackRabbit2312/Nightlight-Calendar/
+
+Select Lovelace as the category.
+
+Click Install.
+
+Method 2: Manual Installation
+
+Download the nightlight-card.js file.
+
+Upload it to your Home Assistant config/www/ folder (e.g., www/community/nightlight-ha-card/).
+
+Go to Settings > Dashboards > Three dots (top right) > Resources.
+
+Add a new resource:
+
+URL: /local/community/nightlight-ha-card/nightlight-card.js
+
+Type: JavaScript Module
+
+⚙️ Prerequisites (Required Helpers)
+
+To utilize the Hub features (Meals, Chores, Notes), you must create specific Helper entities in Settings > Devices & Services > Helpers.
+
+Feature
+
+Helper Type
+
+Quantity
+
+Naming Example
+
+Meal Planner
+
+Text (input_text)
+
+7 (One per day)
+
+input_text.dinner_monday
+
+Whiteboard
+
+To-Do List (todo)
+
+1
+
+todo.family_notes
+
+Chores
+
+To-Do List (todo)
+
+1 per child
+
+todo.kid_one_chores
+
+Note: You do not need to populate the Chore lists manually; the card manages items based on your config.
+
+📝 Configuration
+
+You can configure the card entirely using the Visual Editor. However, for power users, here is the full YAML schema.
+
+type: custom:nightlight-calendar-card
 title: "The Smith Family"
 theme: light  # or 'dark'
 logo_url: /lovelace/home
@@ -92,3 +196,4 @@ Senior Dev Lead: Rick P. | Melbourne
 Framework: LitElement
 
 Repository: JackRabbit2312/Nightlight-Calendar
+
