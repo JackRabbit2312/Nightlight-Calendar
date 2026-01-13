@@ -286,106 +286,114 @@ class NightlightDashboard extends LitElement {
   // --- Rendering Engines ---
 
   render() {
-  if (!this.hass) return html``;
-  const headerTitle = (this._activeView === 'calendar')
-      ? this._referenceDate.toLocaleString('default', { month: 'long', year: 'numeric' })
-      : this.config.title;
+    if (!this.hass) return html``;
 
-  // 1. Core internal views
-  const coreNav = [
-      { id: 'calendar', name: 'Calendar', icon: 'mdi:calendar-month' },
-      { id: 'meals', name: 'Dinner', icon: 'mdi:silverware-fork-knife' },
-      { id: 'whiteboard', name: 'Notes', icon: 'mdi:note-edit' },
-      { id: 'chores', name: 'Chores', icon: 'mdi:check-all' }
-  ];
+    // 1. Logic: Header Title
+    const headerTitle = (this._activeView === 'calendar')
+        ? this._referenceDate.toLocaleString('default', { month: 'long', year: 'numeric' })
+        : this.config.title;
 
-  // 2. Custom buttons from your YAML
-  const customNav = this.config.navigation || [];
+    // 2. Logic: Define Core internal views
+    const coreNav = [
+        { id: 'calendar', name: 'Calendar', icon: 'mdi:calendar-month' },
+        { id: 'meals', name: 'Dinner', icon: 'mdi:silverware-fork-knife' },
+        { id: 'whiteboard', name: 'Notes', icon: 'mdi:note-edit' },
+        { id: 'chores', name: 'Chores', icon: 'mdi:check-all' }
+    ];
 
-  // --- NEW: Alert Dot Logic ---
-  const notesState = this.hass.states[this.config.notes_entity];
-  const hasNewNotes = notesState ? (new Date() - new Date(notesState.last_changed)) < (60 * 60 * 1000) : false;
+    // 3. Logic: Custom navigation and Alert Dot
+    const customNav = this.config.navigation || [];
+    const notesState = this.hass.states[this.config.notes_entity];
+    const hasNewNotes = notesState ? (new Date() - new Date(notesState.last_changed)) < (60 * 60 * 1000) : false;
 
-  return html`
-    <div class="nightlight-hub ${this.config.theme} ${this._menuOpen ? 'menu-visible' : ''}">
-      
-      <nav class="side-rail ${this._menuOpen ? 'open' : ''}">
-        <button class="menu-close-btn" @click="${() => this._menuOpen = false}">✕</button>
+    return html`
+      <div class="nightlight-hub ${this.config.theme} ${this._menuOpen ? 'menu-visible' : ''}">
         
-        <a href="${this.config.logo_url || '/'}" class="logo-link">
-          <div class="logo-area">
-             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12,3L2,12H5V20H19V12H22L12,3M12,8.5C13.5,8.5 15,10 15,11.5C15,13.2 12,16 12,16C12,16 9,13.2 9,11.5C9,10 10.5,8.5 12,8.5Z"/></svg>
+        <nav class="side-rail ${this._menuOpen ? 'open' : ''}">
+          <button class="menu-close-btn" @click="${() => this._menuOpen = false}">✕</button>
+          
+          <a href="${this.config.logo_url || '/'}" class="logo-link">
+            <div class="logo-area">
+               <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12,3L2,12H5V20H19V12H22L12,3M12,8.5C13.5,8.5 15,10 15,11.5C15,13.2 12,16 12,16C12,16 9,13.2 9,11.5C9,10 10.5,8.5 12,8.5Z"/></svg>
+            </div>
+          </a>
+
+          <div class="nav-items">
+            ${coreNav.map(nav => html`
+              <button class="nav-btn ${this._activeView === nav.id ? 'active' : ''}" 
+                      style="position: relative;" 
+                      @click="${() => { this._activeView = nav.id; this._menuOpen = false; }}">
+                 <ha-icon icon="${nav.icon}"></ha-icon>
+                 <span>${nav.name}</span>
+                 ${nav.id === 'whiteboard' && hasNewNotes ? html`<div class="alert-dot"></div>` : ''}
+              </button>
+            `)}
+
+            ${customNav.length > 0 ? html`<hr style="width: 50%; opacity: 0.1; margin: 10px 0;">` : ''}
+
+            ${customNav.map(nav => html`
+              <button class="nav-btn ${this._activeView === nav.name ? 'active' : ''}" 
+                      @click="${() => { this._activeView = nav.name; this._menuOpen = false; }}">
+                 <ha-icon icon="${nav.icon}"></ha-icon>
+                 <span>${nav.name}</span>
+              </button>
+            `)}
           </div>
-        </a>
+        </nav>
 
-        <div class="nav-items">
-          ${coreNav.map(nav => html`
-            <button class="nav-btn ${this._activeView === nav.id ? 'active' : ''}" 
-                    style="position: relative;" 
-                    @click="${() => { this._activeView = nav.id; this._menuOpen = false; }}">
-               <ha-icon icon="${nav.icon}"></ha-icon>
-               <span>${nav.name}</span>
-               ${nav.id === 'whiteboard' && hasNewNotes ? html`<div class="alert-dot"></div>` : ''}
-            </button>
-          `)}
-  
-          ${customNav.length > 0 ? html`<hr style="width: 50%; opacity: 0.1; margin: 10px 0;">` : ''}
-  
-          ${customNav.map(nav => html`
-            <button class="nav-btn ${this._activeView === nav.name ? 'active' : ''}" 
-                    @click="${() => { this._activeView = nav.name; this._menuOpen = false; }}">
-               <ha-icon icon="${nav.icon}"></ha-icon>
-               <span>${nav.name}</span>
-            </button>
-          `)}
-        </div>
-      </nav>
+        <main class="main-stage">
+          <header class="top-bar">
+            <div class="left-info">
+              <ha-icon-button class="hamburger-menu" @click="${() => this._menuOpen = true}">
+                <ha-icon icon="mdi:menu"></ha-icon>
+              </ha-icon-button>
 
-      <main class="main-stage">
-        <header class="top-bar">
-          <div class="left-info">
-            <ha-icon-button class="hamburger-menu" @click="${() => this._menuOpen = true}">
-              <ha-icon icon="mdi:menu"></ha-icon>
-            </ha-icon-button>
-            <h1>${headerTitle}</h1>
-            <div class="meta-row">
-              <span class="clock">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-              <div class="nav-arrows">
-                <button @click="${() => this._navigate(-1)}">❮</button>
-                <button @click="${() => this._navigate(1)}">❯</button>
+              <h1>${headerTitle}</h1>
+              <div class="meta-row">
+                <span class="clock">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                <div class="nav-arrows">
+                  <button @click="${() => this._navigate(-1)}">❮</button>
+                  <button @click="${() => this._navigate(1)}">❯</button>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div class="right-actions">
-            <div class="view-switcher">
-              ${['month', 'week', 'day', 'agenda'].map(m => html`
-                <button class="${this._calendarMode === m ? 'active' : ''}" @click="${() => { this._calendarMode = m; this._activeView = 'calendar'; }}">${m.toUpperCase()}</button>
-              `)}
+            <div class="right-actions">
+              <div class="view-switcher">
+                ${['month', 'week', 'day', 'agenda'].map(m => html`
+                  <button class="${this._calendarMode === m ? 'active' : ''}" 
+                          @click="${() => { this._calendarMode = m; this._activeView = 'calendar'; }}">
+                    ${m.toUpperCase()}
+                  </button>
+                `)}
+              </div>
+              
+              <button class="today-btn" @click="${() => { this._referenceDate = new Date(); this._activeView = 'calendar'; }}">Today</button>
+              
+              <div class="persona-filters">
+                ${this.config.entities?.filter(e => e.entity.startsWith('calendar')).map(ent => html`
+                  <div class="persona ${this._activeCalendars.includes(ent.entity) ? 'active' : 'inactive'}" 
+                       style="background: ${ent.color}" 
+                       @click="${() => this._togglePersona(ent.entity)}">
+                    ${ent.picture ? html`<img src="${ent.picture}">` : ent.entity.split('.')[1][0].toUpperCase()}
+                  </div>
+                `)}
+              </div>
             </div>
-            <button class="today-btn" @click="${() => { this._referenceDate = new Date(); this._activeView = 'calendar'; }}">Today</button>
-            <div class="persona-filters">
-              ${this.config.entities?.filter(e => e.entity.startsWith('calendar')).map(ent => html`
-                <div class="persona ${this._activeCalendars.includes(ent.entity) ? 'active' : 'inactive'}" 
-                     style="background: ${ent.color}" @click="${() => this._togglePersona(ent.entity)}">
-                  ${ent.picture ? html`<img src="${ent.picture}">` : ent.entity.split('.')[1][0].toUpperCase()}
-                </div>
-              `)}
-            </div>
-          </div>
-        </header>
+          </header>
 
-        <section class="content-area">
-          ${this._renderActiveModule()}
-        </section>
-      </main>
+          <section class="content-area">
+            ${this._renderActiveModule()}
+          </section>
+        </main>
 
-      ${this._selectedEvent ? this._renderModal() : ''}
-      ${this._showAddModal ? this._renderAddModal() : ''}
-      <button class="fab" @click="${() => { this._showAddModal = true; this.requestUpdate(); }}">+</button>
-    </div>
-  `;
-}
+        ${this._selectedEvent ? this._renderModal() : ''}
+        ${this._showAddModal ? this._renderAddModal() : ''}
+        
+        <button class="fab" @click="${() => { this._showAddModal = true; this.requestUpdate(); }}">+</button>
+      </div>
+    `;
+  }
 
   _renderActiveModule() {
     // 1. Check if the current view matches a custom navigation item
@@ -1490,6 +1498,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
