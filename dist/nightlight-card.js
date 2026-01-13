@@ -319,8 +319,10 @@ class NightlightDashboard extends LitElement {
 
         <div class="nav-items">
           ${coreNav.map(nav => html`
+            // Inside your sidebar .nav-items loop
             <button class="nav-btn ${this._activeView === nav.id ? 'active' : ''}" 
-              @click="${() => { this._activeView = nav.id; this._menuOpen = false; }}">
+                    style="position: relative;" 
+                    @click="${() => { this._activeView = nav.id; this._menuOpen = false; }}">
                <ha-icon icon="${nav.icon}"></ha-icon>
                <span>${nav.name}</span>
                ${nav.id === 'whiteboard' && hasNewNotes ? html`<div class="alert-dot"></div>` : ''}
@@ -461,32 +463,37 @@ class NightlightDashboard extends LitElement {
   }
 
   _renderWhiteboard() {
-    const entityId = this.config.notes_entity;
-    const todoState = this.hass.states[entityId];
-    if (!todoState) return html`<div class="whiteboard-container">Set notes_entity in YAML.</div>`;
-  
-    const items = todoState.attributes?.items || [];
-  
-    return html`
-      <div class="whiteboard-grid-container">
-        <header class="whiteboard-header">
-          Family Notes
-          <button class="add-note-inline" @click="${() => this._showAddNotePrompt(entityId)}">
-            <ha-icon icon="mdi:plus"></ha-icon> New Note
-          </button>
-        </header>
-        
-        <div class="post-it-grid">
-          ${items.map(item => html`
+  const entityId = this.config.notes_entity;
+  const stateObj = this.hass.states[entityId];
+
+  if (!stateObj) {
+    return html`<div class="whiteboard-grid-container">Please check notes_entity ID.</div>`;
+  }
+
+  // 1. Correctly extract items from the todo list attributes
+  const items = stateObj.attributes.items || [];
+
+  return html`
+    <div class="whiteboard-grid-container">
+      <header class="whiteboard-header">
+        Family Notes
+        <button class="add-note-inline" @click="${() => this._showAddNotePrompt(entityId)}">
+          <ha-icon icon="mdi:plus"></ha-icon> New Note
+        </button>
+      </header>
+      
+      <div class="post-it-grid">
+        ${items.length === 0 ? html`<div class="empty-msg">No active notes.</div>` : 
+          items.map(item => html`
             <div class="post-it">
               <button class="delete-note" @click="${() => this._deleteNote(entityId, item.summary)}">✕</button>
               <div class="note-content">${item.summary}</div>
             </div>
-          `)}
-          ${items.length === 0 ? html`<div class="empty-msg">No active notes.</div>` : ''}
-        </div>
-      </div>`;
-  }
+          `)
+        }
+      </div>
+    </div>`;
+}
   
   async _showAddNotePrompt(entityId) {
     const note = prompt("Enter your note:");
@@ -983,13 +990,10 @@ class NightlightDashboard extends LitElement {
       /* --- Whiteboard & Post-it Grid --- */
       .whiteboard-grid-container {
         height: 100%;
+        max-height: calc(100vh - 120px); /* Keep it within the dashboard stage */
         display: flex;
         flex-direction: column;
-        background: #fffcf0; /* Paper-like background */
-        border-radius: 20px;
         padding: 15px;
-        border: 1px solid #f0e68c;
-        box-shadow: inset 0 0 40px rgba(0,0,0,0.02);
         overflow: hidden;
       }
       
@@ -1006,31 +1010,40 @@ class NightlightDashboard extends LitElement {
       
       .post-it-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        /* Enforce small card sizes even if text is long */
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        grid-auto-rows: min-content; 
         gap: 20px;
-        padding: 10px;
-        overflow-y: auto; /* Allows scrolling through many notes */
+        padding: 15px;
+        overflow-y: auto;
         flex-grow: 1;
       }
       
       .post-it {
-        background: #fff9c4; /* Classic yellow */
-        color: #333;
+        background: #fff9c4;
         padding: 20px;
-        min-height: 150px;
+        min-height: 180px;
+        max-height: 300px; /* Prevent massive scaling */
+        overflow-y: auto; /* Allow scrolling inside long notes */
         border-radius: 2px;
         box-shadow: 3px 3px 10px rgba(0,0,0,0.1);
         position: relative;
         font-family: 'Comic Sans MS', cursive, sans-serif;
-        transform: rotate(-1.5deg); /* Slight organic tilt */
-        transition: transform 0.2s ease-in-out;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        font-size: 1.1rem;
-        line-height: 1.3;
+        transform: rotate(-1.5deg);
       }
+
+      /* Sidebar Alert Dot - Scoped to the button */
+        .nav-btn .alert-dot {
+          position: absolute;
+          top: 10px;
+          right: 15px;
+          width: 10px;
+          height: 10px;
+          background: #ff5252;
+          border-radius: 50%;
+          border: 2px solid var(--card);
+          z-index: 10;
+        }
       
       /* Alternate colors and rotations for a natural look */
       .post-it:nth-child(even) { 
@@ -1469,6 +1482,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
