@@ -1,199 +1,113 @@
-Nightlight Dashboard Card (v1.4.0)
+# Nightlight Hub (v1.6.8) 🏠
 
-Nightlight Dashboard is a high-performance "Family Hub" card for Home Assistant, inspired by Skylight Calendar hardware. It consolidates calendars, meal planning, chore tracking, and family notes into a single, responsive interface.
+A high-performance, tablet-optimized family dashboard for **Home Assistant**. Designed in Melbourne for busy households, this dashboard focuses on local control, empathy-driven UI, and persistent memory.
 
-Specifically architected for Full HD (1080p) touch panels, it provides a clean, authoritative interface for family scheduling and multi-calendar management without external cloud dependencies.
+---
 
-✨ Key Features
+## ✨ Key Features
 
-Functional
+### 📅 Advanced Family Calendar
+* **Four Display Modes**: Month, Week, Day, and Agenda views.
+* **Persona Filters**: Toggle individual family members' calendars with a single tap.
+* **Custom Persona Icons**: Supports profile pictures or initials with dynamic coloring.
 
-📅 Unified Calendar: Dynamic switching between Month, Week (Time-Grid), Day (Hourly), and Agenda views. Supports color-coding and on-the-fly "Persona" toggling.
+### 📝 Post-it Whiteboard (2026 Edition)
+* **WebSocket Retrieval**: Uses high-speed WebSocket calls to fetch notes directly from your To-do list.
+* **Post-it Grid**: Every entry in your `todo.family_notes` becomes a separate, organic-styled card.
+* **Delete & Archive**: Clicking delete marks the item as "completed" in Home Assistant, archiving it for history while clearing your board.
+* **Sidebar Alerts**: A red notification dot appears on the Sidebar when new notes are added.
 
-🧹 Smart Chores:
+### 🍴 Persistent Dinner Planner
+* **Multi-Entity Storage**: Saves each day to a unique `input_text` entity to bypass the 255-character limit.
+* **5-Day Auto-Clear**: Automatically wipes meal plans that are more than 5 days old based on hidden timestamps.
+* **Cross-Device Sync**: Updates instantly on all tablets and mobile devices in the home.
 
-Time-Gated Logic: Chores only appear during specific times (e.g., "Morning" vs "Evening").
+### 🧹 Chore Dashboard
+* **Time-Locked Periods**: Display specific tasks only during relevant times (e.g., "Morning Routine" or "After School").
+* **Daily Auto-Reset**: Automatically unchecks all chores at a specified time every morning (e.g., 6:00 AM).
+* **User-Specific Views**: Show only the tasks assigned to the currently logged-in HA user.
 
-User Detection: Filters chores based on the logged-in HA user.
+---
 
-Auto-Reset: Built-in logic automatically resets completed tasks to "needs action" the next day.
+## 🚀 Installation
 
-🍽️ Meal Planner: A 7-day persistent menu planner stored in Home Assistant input_text helpers.
+### 1. Requirements
+* **Home Assistant** (Latest stable version).
+* **Local To-do Integration**: For the Whiteboard feature.
+* **Input Text Helpers**: Seven entities (e.g., `input_text.dinner_plan_monday`) for the Meal Planner.
 
-📝 Digital Whiteboard: A "Post-it" style message board powered by Home Assistant To-Do lists.
+### 2. Manual Installation
+1.  Download `nightlight-card.js`.
+2.  Upload it to your `/config/www/` directory.
+3.  Add the resource to your Dashboards:
+    ```yaml
+    url: /local/nightlight-card.js
+    type: module
+    ```
 
-Technical
+---
 
-⚡ Zero-Build Architecture: Delivered as a single-file Lit module for maximum portability.
+### 🏁 Getting Started Checklist
 
-🔒 Secure Data Engine: Utilizes the Home Assistant callApi websocket for authenticated, local-only data retrieval.
+Before installing the dashboard, ensure you have configured these items in Home Assistant:
 
-👆 Touch-First Design: Optimized hit-targets and momentum scrolling designed for wall-mounted kiosks.
+- [ ] **Create 7 Dinner Helpers**: Go to **Settings > Devices & Services > Helpers** and create 7 `input_text` entities named `dinner_plan_monday` through `dinner_plan_sunday`.
+- [ ] **Setup Local To-do List**: Add the **Local To-do** integration and create a list named `family_notes`.
+- [ ] **Add a Placeholder Note**: Add at least one item to your new To-do list (e.g., "Welcome home!") so the dashboard has an initial item to display.
+- [ ] **Organize Calendars**: Ensure the calendars you want to display are enabled and have distinct names in your YAML.
+- [ ] **Map Chores**: If using the Chore Dashboard, verify each child's `todo_list` entity ID is correctly formatted (e.g., `todo.joel_chores`).
 
-🖱️ Visual Editor: Fully configurable via the Lovelace UI visual editor—no YAML required.
+---
 
-🛠️ Installation
+## 🛠 Configuration
 
-Method 1: HACS (Recommended)
-
-Open HACS in your Home Assistant instance.
-
-Click the three dots in the top right and select Custom repositories.
-
-Paste the URL: https://github.com/JackRabbit2312/Nightlight-Calendar/
-
-Select Lovelace as the category.
-
-Click Install.
-
-Method 2: Manual Installation
-
-Download the nightlight-card.js file.
-
-Upload it to your Home Assistant config/www/ folder (e.g., www/community/nightlight-ha-card/).
-
-Go to Settings > Dashboards > Three dots (top right) > Resources.
-
-Add a new resource:
-
-URL: /local/community/nightlight-ha-card/nightlight-card.js
-
-Type: JavaScript Module
-
-⚙️ Prerequisites (Required Helpers)
-
-To utilize the Hub features (Meals, Chores, Notes), you must create specific Helper entities in Settings > Devices & Services > Helpers.
-
-Feature
-
-Helper Type
-
-Quantity
-
-Naming Example
-
-Meal Planner
-
-Text (input_text)
-
-7 (One per day)
-
-input_text.dinner_monday
-
-Whiteboard
-
-To-Do List (todo)
-
-1
-
-todo.family_notes
-
-Chores
-
-To-Do List (todo)
-
-1 per child
-
-todo.kid_one_chores
-
-Note: You do not need to populate the Chore lists manually; the card manages items based on your config.
-
-📝 Configuration
-
-You can configure the card entirely using the Visual Editor. However, for power users, here is the full YAML schema.
-
+### Example YAML Setup
+```yaml
 type: custom:nightlight-calendar-card
-title: "The Smith Family"
-theme: light  # or 'dark'
-logo_url: /lovelace/home
+title: "Family Hub"
+theme: "dark" # or "light"
 notes_entity: todo.family_notes
-
-# 1. Calendars
-entities:
-  - entity: calendar.family_shared
-    color: "#34c759"
-    picture: /local/avatars/family.png
-  - entity: calendar.rick
-    color: "#0071e3"
-
-# 2. Meal Planner (Map days to input_text entities)
 meal_entities:
-  Monday: input_text.dinner_monday
-  Tuesday: input_text.dinner_tuesday
-  Wednesday: input_text.dinner_wednesday
-  Thursday: input_text.dinner_thursday
-  Friday: input_text.dinner_friday
-  Saturday: input_text.dinner_saturday
-  Sunday: input_text.dinner_sunday
-
-# 3. Chore Time Periods
-periods:
-  - name: Morning
-    start: '06:00'
-    end: '09:00'
-  - name: Evening
-    start: '17:00'
-    end: '20:00'
-
-# 4. Chore Profiles
-chores:
-  - name: Alice
-    image: /local/images/alice.jpg
-    todo_list: todo.alice_tasks # The backing HA entity
-    assigned_user: alice_ha_user # Optional: Only show this profile if this user is logged in
-    items:
-      - label: Brush Teeth
-        period: Morning
-      - label: Pack Bag
-        period: Morning
-
-# 5. Sidebar Navigation (Custom Links)
+  Monday: input_text.dinner_plan_monday
+  Tuesday: input_text.dinner_plan_tuesday
+  Wednesday: input_text.dinner_plan_wednesday
+  Thursday: input_text.dinner_plan_thursday
+  Friday: input_text.dinner_plan_friday
+  Saturday: input_text.dinner_plan_saturday
+  Sunday: input_text.dinner_plan_sunday
+entities:
+  - entity: calendar.family
+    color: "#7b61ff"
+    picture: "/local/family_photo.jpg"
 navigation:
-  - name: Cameras
-    icon: mdi:cctv
-    path: /dashboard-cameras
-🧩 Feature Details
+  - name: "Security"
+    icon: "mdi:shield-home"
+    path: "/dashboard-security/0"
+chores:
+  - name: "Joel"
+    todo_list: todo.joel_chores
+    image: "/local/joel_avatar.png"
+    items:
+      - label: "Pack Bag"
+        period: "Morning"
 
-🧹 Chore Logic
+### ⚙️ Configuration Options
 
-The Chore system connects the dashboard configuration to a standard Home Assistant To-Do list.
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `title` | string | `"Family Hub"` | The main header title for your dashboard. |
+| `theme` | string | `"light"` | Supports `"light"` (Skylight) or `"dark"` (Nightlight). |
+| `notes_entity` | string | **Mandatory** | The `todo.` entity used for the Whiteboard. |
+| `meal_entities` | object | **Mandatory** | Mapping of 7 `input_text` entities for dinner. |
+| `chores` | array | `[]` | List of child profiles and their associated tasks. |
+| `navigation` | array | `[]` | Custom sidebar links (supports kiosk-mode iframes). |
 
-Sync: When you click a task on the dashboard, it toggles the status in the linked To-Do entity.
+---
 
-Auto-Reset: Every time the dashboard is loaded, it checks if it's a new day. If it is, it runs a script to reset all configured items in the attached To-Do lists back to "Needs Action."
+### 💡 Technical Implementation Notes
 
-🍽️ Meal Planner Logic
+#### WebSocket Notes Retrieval
+The Whiteboard uses the `todo/item/list` WebSocket call. This is required because Home Assistant does not expose the full item list in the standard state machine attributes for many To-do integrations.
 
-The meal planner is persistent via Home Assistant storage.
-
-It saves your text entry into the mapped input_text entity.
-
-Entries older than 5 days are automatically visually cleared from the board to keep it fresh.
-
-🎨 Styling & Theming
-
-The card uses CSS variables that pull from your Home Assistant theme.
-
-Core Variables: --card-background-color, --primary-text-color, --accent (defaults to #7b61ff).
-
-Modes: Built-in Light and Dark modes are selectable in the editor.
-
-⚠️ Troubleshooting
-
-1. My Chores section says "No active chore period right now."
-Check your periods config. The current time must be between the start and end time of a defined period.
-
-2. I can't click the chore checkboxes.
-Ensure the todo_list entity defined in the config actually exists in Home Assistant.
-
-3. The Meal Planner isn't saving.
-Ensure you have created the input_text helpers and mapped them correctly in the config meal_entities section.
-
-Credits
-
-Senior Dev Lead: Rick P. | Melbourne
-
-Framework: LitElement
-
-Repository: JackRabbit2312/Nightlight-Calendar
-
+#### Daily Chore Reset
+The card stores a `nightlight_reset_date` in the browser's `localStorage`. When the dashboard is first opened on any day that doesn't match that date, it iterates through all configured `todo_list` entities and resets completed items to `needs_action`.
