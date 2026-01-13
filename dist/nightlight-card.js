@@ -319,11 +319,21 @@ class NightlightDashboard extends LitElement {
         </a>
 
         <div class="nav-items">
+          ${coreNav.map(nav => html`
+            <button class="nav-btn ${this._activeView === nav.id ? 'active' : ''}" 
+                    style="position: relative;" 
+                    @click="${() => { this._activeView = nav.id; this._menuOpen = false; }}">
+               <ha-icon icon="${nav.icon}"></ha-icon>
+               <span>${nav.name}</span>
+               ${nav.id === 'whiteboard' && hasNewNotes ? html`<div class="alert-dot"></div>` : ''}
+            </button>
+          `)}
+  
           ${customNav.length > 0 ? html`<hr style="width: 50%; opacity: 0.1; margin: 10px 0;">` : ''}
-
+  
           ${customNav.map(nav => html`
             <button class="nav-btn ${this._activeView === nav.name ? 'active' : ''}" 
-              @click="${() => { this._activeView = nav.name; this._menuOpen = false; }}">
+                    @click="${() => { this._activeView = nav.name; this._menuOpen = false; }}">
                <ha-icon icon="${nav.icon}"></ha-icon>
                <span>${nav.name}</span>
             </button>
