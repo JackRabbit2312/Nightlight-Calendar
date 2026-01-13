@@ -532,14 +532,25 @@ class NightlightDashboard extends LitElement {
   }
 }
   
-  async _deleteNote(entityId, summary) {
-    // Marks the item as completed, archiving it from the active list
-    await this.hass.callService('todo', 'update_item', {
-      entity_id: entityId,
-      item: summary,
-      status: 'completed'
-    });
+  async _deleteNote(entityId, identifier) {
+    // 1. Instant Visual Update: Remove from local list immediately
+    this._todoItems = this._todoItems.filter(item => 
+      (item.uid !== identifier && item.summary !== identifier)
+    );
     this.requestUpdate();
+  
+    try {
+      // 2. Perform the actual background sync
+      await this.hass.callService('todo', 'update_item', {
+        entity_id: entityId,
+        item: identifier,
+        status: 'completed'
+      });
+    } catch (e) {
+      // 3. If it fails, pull the real list back to restore the note
+      this._fetchNotes();
+      console.error("Sync failed, restoring note:", e);
+    }
   }
 
   _renderCalendarView() {
@@ -1508,6 +1519,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
