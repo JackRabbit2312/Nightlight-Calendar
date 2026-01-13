@@ -395,27 +395,53 @@ class NightlightDashboard extends LitElement {
    */
   _renderMealPlanner() {
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    const mealData = JSON.parse(this.hass.states[this.config.meal_entity]?.state || "{}");
+    const entities = this.config.meal_entities || {};
 
     return html`
       <div class="meal-grid-view">
-        ${days.map(day => html`
-          <div class="meal-card-item">
-            <div class="meal-day-label">${day}</div>
-            <textarea placeholder="What's for dinner?" 
-              .value="${mealData[day] || ''}" 
-              @change="${(e) => this._saveMeal(day, e.target.value)}"></textarea>
-          </div>
-        `)}
+        ${days.map(day => {
+          const entityId = entities[day];
+          const stateObj = this.hass.states[entityId];
+          
+          // Parse the state (expected format: "Meal Content | Timestamp")
+          let displayValue = "";
+          if (stateObj && stateObj.state !== "unknown" && stateObj.state !== "none") {
+            const [content, timestamp] = stateObj.state.split(' | ');
+            
+            // Auto-clear logic: If older than 5 days, don't display and clear in background
+            if (timestamp && (new Date() - new Date(timestamp)) > (5 * 24 * 60 * 60 * 1000)) {
+              this._saveMeal(day, ""); 
+              displayValue = "";
+            } else {
+              displayValue = content || "";
+            }
+          }
+
+          return html`
+            <div class="meal-card-item">
+              <div class="meal-day-label">${day}</div>
+              <textarea 
+                placeholder="What's for dinner?" 
+                .value="${displayValue}" 
+                @change="${(e) => this._saveMeal(day, e.target.value)}">
+              </textarea>
+            </div>`;
+        })}
       </div>`;
   }
 
   async _saveMeal(day, value) {
-    const currentData = JSON.parse(this.hass.states[this.config.meal_entity]?.state || "{}");
-    currentData[day] = value;
+    const entityId = this.config.meal_entities?.[day];
+    if (!entityId) return;
+
+    // Save format: "The Meal Name | ISO-Timestamp"
+    // This allows the system to know when the entry was made
+    const timestamp = new Date().toISOString();
+    const payload = value ? `${value} | ${timestamp}` : "";
+
     await this.hass.callService('input_text', 'set_value', {
-      entity_id: this.config.meal_entity,
-      value: JSON.stringify(currentData)
+      entity_id: entityId,
+      value: payload
     });
   }
 
@@ -1201,6 +1227,23 @@ class NightlightCardEditor extends LitElement {
               </div>`)}
           </div>
         </ha-expansion-panel>
+        <ha-expansion-panel header="Meal Plan Entities" outlined>
+          <div class="panel-content">
+            ${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => html`
+              <ha-entity-picker 
+                label="${day} Dinner Entity"
+                .hass="${this.hass}"
+                .value="${(this._config.meal_entities || {})[day]}"
+                .includeDomains="${['input_text']}"
+                @value-changed="${e => {
+                  const meal_entities = { ...(this._config.meal_entities || {}) };
+                  meal_entities[day] = e.detail.value;
+                  this._updateConfig({ meal_entities });
+                }}">
+              </ha-entity-picker>
+            `)}
+          </div>
+        </ha-expansion-panel>
       </div>`;
   }
 
@@ -1238,6 +1281,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
