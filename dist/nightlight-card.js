@@ -62,13 +62,23 @@ class NightlightDashboard extends LitElement {
   // --- Data Management & Lifecycle ---
 
   updated(changedProps) {
-    if (changedProps.has('hass')) {
-      this._checkDailyReset(); 
-    }
-    if (changedProps.has('hass') || changedProps.has('_activeView') || changedProps.has('_calendarMode') || changedProps.has('_referenceDate')) {
-      this._refreshData();
-    }
+  // 1. Check for chore resets whenever the HASS state updates
+  if (changedProps.has('hass')) {
+    this._checkDailyReset(); 
   }
+
+  // 2. Refresh calendar data if the view, date, or mode changes
+  if (changedProps.has('hass') || changedProps.has('_activeView') || 
+      changedProps.has('_calendarMode') || changedProps.has('_referenceDate')) {
+    this._refreshData();
+  }
+
+  // 3. IMPORTANT: Force a re-render specifically when switching tabs
+  // This ensures the Notes textarea pulls the latest text from your To-do list.
+  if (changedProps.has('_activeView')) {
+    this.requestUpdate();
+  }
+}
 
   /**
    * Centralized Memory Reset: Resets all Todo-list items to 'needs_action' every morning.
@@ -451,42 +461,65 @@ class NightlightDashboard extends LitElement {
    */
   _renderWhiteboard() {
     const entityId = this.config.notes_entity;
+    
+    // 1. Get the latest state from Home Assistant
     const todoState = this.hass.states[entityId];
     
-    // Find the 'Family Notes' item in the list, or use the first item found
-    const items = todoState?.attributes?.items || [];
-    const notesItem = items.find(i => i.summary.includes('Notes')) || items[0];
+    if (!todoState) {
+      return html`<div class="whiteboard-container">Error: notes_entity (${entityId}) not found.</div>`;
+    }
+
+    // 2. Extract the items
+    const items = todoState.attributes?.items || [];
+    const notesItem = items[0];
+    
+    // 3. This value MUST be pulled from the entity every time
     const currentText = notesItem ? notesItem.summary : "";
 
     return html`
       <div class="whiteboard-container">
         <div class="whiteboard-header">Family Notes</div>
         <textarea 
-          placeholder="Leave a message for the family... (No character limit)" 
+          placeholder="Leave a message..." 
           .value="${currentText}" 
           @change="${(e) => this._saveNotes(entityId, notesItem, e.target.value)}">
         </textarea>
       </div>`;
   }
+  /**
+ * SYSTEM-BASED SAVE (v1.6.7)
+ * Saves long-form text by updating the summary of a To-do list item.
+ */
+async _saveNotes(entityId, originalItem, newText) {
+  // Safety check: Ensure the entity exists before calling services
+  if (!entityId || !this.hass.states[entityId]) {
+    console.error("Nightlight: notes_entity not found.");
+    return;
+  }
 
-  async _saveNotes(entityId, originalItem, newText) {
-    if (!entityId) return;
-
+  try {
     if (originalItem) {
-      // Update the existing note item
+      // If an item exists, we use 'update_item' to RENAME it with the new text
       await this.hass.callService('todo', 'update_item', {
         entity_id: entityId,
-        item: originalItem.summary,
-        rename: newText
+        item: originalItem.summary, // The old text we are searching for
+        rename: newText             // The new long-form text to save
       });
     } else {
-      // Create the note item if the list is empty
+      // If the list is empty, we must 'add_item' to create the first note
       await this.hass.callService('todo', 'add_item', {
         entity_id: entityId,
         item: newText
       });
     }
+
+    // Explicitly request an update to show the saved text immediately
+    this.requestUpdate();
+    
+  } catch (e) {
+    console.error("Nightlight: Error saving to To-do list.", e);
   }
+}
 
   _renderCalendarView() {
     if (this._calendarMode === 'month') return this._renderMonthGrid();
@@ -1355,6 +1388,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
