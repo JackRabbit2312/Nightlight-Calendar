@@ -705,7 +705,7 @@ class NightlightDashboard extends LitElement {
           ${visibleKids.map((kid) => {
             const tasks = (kid.items || []).filter(i => i.period === activePeriod.name);
             if (tasks.length === 0) return html``;
-  
+
             return html`
               <div class="kid-chore-card">
                 <div class="kid-banner" style="background-image: url('${kid.image}')">
@@ -717,17 +717,12 @@ class NightlightDashboard extends LitElement {
                     
                     return html`
                       <div class="kid-item ${isDone ? 'done' : ''}" 
-                           @click="${(e) => {
-                             // Touch-Lock: Prevent toggle if the user is actually scrolling
-                             if (this._isScrolling) return; 
-                             
-                             this._toggleTodo(kid.todo_list, item.label, isDone);
-                           }}"
+                           @click="${() => { if (!this._isScrolling) this._toggleTodo(kid.todo_list, item.label, isDone); }}"
                            @touchstart="${() => { this._isScrolling = false; }}"
                            @touchmove="${() => { this._isScrolling = true; }}">
                         
                         <ha-icon 
-                          icon="${isDone ? 'mdi:check-circle' : 'mdi:circle-outline'}"
+                          .icon="${isDone ? 'mdi:check-circle' : 'mdi:circle-outline'}"
                           class="chore-icon">
                         </ha-icon>
                         
@@ -870,7 +865,7 @@ static get styles() {
 
       /* --- Chore Dashboard - Items (Light/Dark Ready) --- */
       .kid-list { padding: 10px; display: flex; flex-direction: column; gap: 6px; }
-      .kid-item { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; cursor: pointer; color: var(--text); font-weight: 800; border: 1px solid transparent; background: rgba(123, 97, 255, 0.03); transition: all 0.2s ease; }
+      .kid-item { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; cursor: pointer; color: var(--text); font-weight: 800; border: 1px solid transparent; background: rgba(123, 97, 255, 0.03); transition: all 0.2s ease; pointer-events: auto; }
       .nightlight-hub.dark .kid-item { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); }
       .kid-item:active { background: rgba(123, 97, 255, 0.15); transform: scale(0.97); }
       .kid-item.done { background: rgba(52, 199, 89, 0.1) !important; border: 1px solid rgba(52, 199, 89, 0.3); opacity: 0.8; }
@@ -1268,6 +1263,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
