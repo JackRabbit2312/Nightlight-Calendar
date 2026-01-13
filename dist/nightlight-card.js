@@ -705,32 +705,41 @@ class NightlightDashboard extends LitElement {
           ${visibleKids.map((kid) => {
             const tasks = (kid.items || []).filter(i => i.period === activePeriod.name);
             if (tasks.length === 0) return html``;
-
+  
             return html`
               <div class="kid-chore-card">
-                 <div class="kid-banner" style="background-image: url('${kid.image}')">
-                    <h3>${kid.name}</h3>
-                 </div>
-                 <div class="kid-list">
-                    ${tasks.map(item => {
-                      const isDone = this._getTodoStatus(kid.todo_list, item.label);
-
-                      return html`
-                        <div class="kid-item ${isDone ? 'done' : ''}" @click="...">
-                          <ha-icon 
-                            icon="${isDone ? 'mdi:check-circle' : 'mdi:circle-outline'}" 
-                            class="chore-icon">
-                          </ha-icon>
-                          <span>${item.label}</span>
-                        </div>
-                      `;
-                    })}
-                 </div>
+                <div class="kid-banner" style="background-image: url('${kid.image}')">
+                  <h3>${kid.name}</h3>
+                </div>
+                <div class="kid-list">
+                  ${tasks.map(item => {
+                    const isDone = this._getTodoStatus(kid.todo_list, item.label);
+                    
+                    return html`
+                      <div class="kid-item ${isDone ? 'done' : ''}" 
+                           @click="${(e) => {
+                             // Touch-Lock: Prevent toggle if the user is actually scrolling
+                             if (this._isScrolling) return; 
+                             
+                             this._toggleTodo(kid.todo_list, item.label, isDone);
+                           }}"
+                           @touchstart="${() => { this._isScrolling = false; }}"
+                           @touchmove="${() => { this._isScrolling = true; }}">
+                        
+                        <ha-icon 
+                          icon="${isDone ? 'mdi:check-circle' : 'mdi:circle-outline'}"
+                          class="chore-icon">
+                        </ha-icon>
+                        
+                        <span>${item.label}</span>
+                      </div>`;
+                  })}
+                </div>
               </div>`;
           })}
         </div>
       </div>`;
-}
+  }
 
   _renderModal() {
     return html`
@@ -1259,6 +1268,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
