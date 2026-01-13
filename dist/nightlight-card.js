@@ -445,21 +445,47 @@ class NightlightDashboard extends LitElement {
     });
   }
 
+  /**
+   * SYSTEM-BASED WHITEBOARD (v1.6.6)
+   * Uses a To-do list item to bypass the 255-character limit.
+   */
   _renderWhiteboard() {
+    const entityId = this.config.notes_entity;
+    const todoState = this.hass.states[entityId];
+    
+    // Find the 'Family Notes' item in the list, or use the first item found
+    const items = todoState?.attributes?.items || [];
+    const notesItem = items.find(i => i.summary.includes('Notes')) || items[0];
+    const currentText = notesItem ? notesItem.summary : "";
+
     return html`
       <div class="whiteboard-container">
         <div class="whiteboard-header">Family Notes</div>
-        <textarea placeholder="Leave a message for the family..." .value="${this._getData('family_notes')}" @input="${(e) => this._saveData('family_notes', e.target.value)}"></textarea>
+        <textarea 
+          placeholder="Leave a message for the family... (No character limit)" 
+          .value="${currentText}" 
+          @change="${(e) => this._saveNotes(entityId, notesItem, e.target.value)}">
+        </textarea>
       </div>`;
   }
 
-  _saveData(key, value) {
-    localStorage.setItem(`nightlight_${key}`, value);
-    this.requestUpdate();
-  }
+  async _saveNotes(entityId, originalItem, newText) {
+    if (!entityId) return;
 
-  _getData(key) {
-    return localStorage.getItem(`nightlight_${key}`) || '';
+    if (originalItem) {
+      // Update the existing note item
+      await this.hass.callService('todo', 'update_item', {
+        entity_id: entityId,
+        item: originalItem.summary,
+        rename: newText
+      });
+    } else {
+      // Create the note item if the list is empty
+      await this.hass.callService('todo', 'add_item', {
+        entity_id: entityId,
+        item: newText
+      });
+    }
   }
 
   _renderCalendarView() {
@@ -1244,6 +1270,20 @@ class NightlightCardEditor extends LitElement {
             `)}
           </div>
         </ha-expansion-panel>
+        <ha-expansion-panel header="Notes Configuration" outlined>
+          <div class="panel-content">
+            <ha-entity-picker 
+              label="Notes To-do List"
+              .hass="${this.hass}"
+              .value="${this._config.notes_entity}"
+              .includeDomains="${['todo']}"
+              @value-changed="${e => this._updateConfig({ notes_entity: e.detail.value })}">
+            </ha-entity-picker>
+            <p style="font-size: 0.75rem; color: var(--secondary-text-color); margin-top: 8px;">
+              Using a To-do list allows for much longer notes than a standard text helper.
+            </p>
+          </div>
+        </ha-expansion-panel>
       </div>`;
   }
 
@@ -1281,6 +1321,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
