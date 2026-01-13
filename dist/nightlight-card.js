@@ -480,13 +480,22 @@ class NightlightDashboard extends LitElement {
   }
 
   async _fetchNotes(entityId) {
-    const result = await this.hass.callWS({
-      type: "todo/item/list",
-      entity_id: entityId,
-    });
-    this._todoItems = result.items || [];
+    if (!entityId || !this.hass) return;
+    try {
+      const result = await this.hass.callWS({
+        type: "todo/item/list",
+        entity_id: entityId,
+      });
+      
+      // CRITICAL: Only show items that are NOT completed
+      this._todoItems = (result.items || []).filter(item => item.status === 'needs_action');
+      
+      this.requestUpdate();
+    } catch (e) {
+      console.error("Failed to fetch notes:", e);
+    }
   }
-
+  
   _renderWhiteboard() {
     const entityId = this.config.notes_entity;
     
@@ -521,35 +530,36 @@ class NightlightDashboard extends LitElement {
   }
   
   async _showAddNotePrompt(entityId) {
-  const note = prompt("Enter your note:");
-  if (note) {
-    await this.hass.callService('todo', 'add_item', {
-      entity_id: entityId,
-      item: note
-    });
-    // Immediately fetch after adding so you don't have to wait for the next state update
-    this._fetchNotes(entityId); 
+    const note = prompt("Enter your note:");
+    if (note) {
+      await this.hass.callService('todo', 'add_item', {
+        entity_id: entityId,
+        item: note
+      });
+      
+      // Refresh the list immediately so the new note appears instantly
+      await this._fetchNotes(entityId);
+    }
   }
-}
   
   async _deleteNote(entityId, identifier) {
-    // 1. Instant Visual Update: Remove from local list immediately
-    this._todoItems = this._todoItems.filter(item => 
-      (item.uid !== identifier && item.summary !== identifier)
-    );
-    this.requestUpdate();
-  
+    if (!entityId) return;
+
+    // 1. Confirmation Popup
+    if (!confirm("Are you sure you want to delete this note?")) return;
+
     try {
-      // 2. Perform the actual background sync
+      // 2. Mark as completed in Home Assistant
       await this.hass.callService('todo', 'update_item', {
         entity_id: entityId,
         item: identifier,
         status: 'completed'
       });
+
+      // 3. Immediately refresh the local list to hide the note
+      await this._fetchNotes(entityId);
     } catch (e) {
-      // 3. If it fails, pull the real list back to restore the note
-      this._fetchNotes();
-      console.error("Sync failed, restoring note:", e);
+      console.error("Nightlight: Delete failed", e);
     }
   }
 
@@ -1519,6 +1529,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
