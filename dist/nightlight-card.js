@@ -714,20 +714,23 @@ class NightlightDashboard extends LitElement {
                  <div class="kid-list">
                     ${tasks.map(item => {
                       const isDone = this._getTodoStatus(kid.todo_list, item.label);
-                      return html`
-                        <div class="kid-item ${isDone ? 'done' : ''}" 
-                             @click="${(e) => {
-                                // Instant Visual Cue: shrink the item slightly on click
-                                e.currentTarget.style.transform = "scale(0.98)";
-                                setTimeout(() => e.currentTarget.style.transform = "scale(1)", 100);
-                                this._toggleTodo(kid.todo_list, item.label, isDone);
-                             }}">
-                           <ha-icon 
-                             icon="${isDone ? 'mdi:check-circle' : 'mdi:circle-outline'}"
-                             class="chore-icon ${isDone ? 'is-completed' : ''}" style="transition: color 0.3s ease;">
-                           </ha-icon>
-                           <span>${item.label}</span>
-                        </div>`;
+
+                        return html`
+                          <div class="kid-item ${isDone ? 'done' : ''}" 
+                               @click="${(e) => {
+                                 // This provides the "slightly smaller" visual feedback you mentioned
+                                 e.currentTarget.style.transform = "scale(0.98)";
+                                 setTimeout(() => e.currentTarget.style.transform = "scale(1)", 100);
+                                 this._toggleTodo(kid.todo_list, item.label, isDone);
+                               }}">
+                            
+                            <ha-icon 
+                              icon="${isDone ? 'mdi:check-circle' : 'mdi:circle-outline'}"
+                              class="chore-icon ${isDone ? 'is-completed' : ''}">
+                            </ha-icon>
+                            
+                            <span>${item.label}</span>
+                          </div>`;
                     })}
                  </div>
               </div>`;
@@ -938,25 +941,15 @@ class NightlightDashboard extends LitElement {
       .chore-grid-locked { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; overflow-y: auto; padding-bottom: 10px; }
       .kid-chore-card { background: var(--card); border-radius: 20px; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.04); position: relative; }
       .chore-icon.is-completed { color: #34c759 !important; transform: scale(1.15); }
-      
+      .chore-icon {--mdc-icon-size: 28px;color: #bbb; transition: all 0.3s ease;}
+
+      .kid-item span {color: #1a1a1b; font-weight: 700;}
       .kid-banner { height: 100px; background-size: 100% 100%; background-position: center; background-repeat: no-repeat; display: flex; align-items: flex-end; padding: 15px; color: #fff; position: relative; }
       .kid-banner::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(transparent, rgba(0,0,0,0.7)); }
       .kid-banner h3 { margin: 0; z-index: 1; font-size: 1.5rem; font-weight: 900; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
       
       /* Refined Ultra-Thin Announcer */
-      .period-announcer { 
-        text-align: right; 
-        font-weight: 800; 
-        text-transform: uppercase; 
-        letter-spacing: 1px; 
-        color: var(--accent); 
-        padding: 4px 12px; 
-        background: rgba(123, 97, 255, 0.08); 
-        border-radius: 6px; 
-        margin-bottom: 8px; 
-        font-size: 0.6rem; 
-        align-self: flex-end; 
-      }
+      .period-announcer { text-align: right; font-weight: 800;text-transform: uppercase; letter-spacing: 1px; color: var(--accent); padding: 4px 12px; background: rgba(123, 97, 255, 0.08); border-radius: 6px; margin-bottom: 8px; font-size: 0.6rem; align-self: flex-end; }
       
       .medal { position: absolute; top: 15px; right: 15px; z-index: 2; --mdc-icon-size: 32px; color: var(--gold); filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.4)); animation: bounce 1s infinite alternate; }
       @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-3px); } }
@@ -1544,6 +1537,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
