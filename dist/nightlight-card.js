@@ -24,7 +24,8 @@ class NightlightDashboard extends LitElement {
       _activeCalendars: { type: Array },
       _showAddModal: { type: Boolean },
       _selectedCalendarId: { type: String },
-      _menuOpen: { type: Boolean }
+      _menuOpen: { type: Boolean },
+      _todoItems: { type: Array }
     };
   }
 
@@ -318,16 +319,6 @@ class NightlightDashboard extends LitElement {
         </a>
 
         <div class="nav-items">
-          ${coreNav.map(nav => html`
-            <button class="nav-btn ${this._activeView === nav.id ? 'active' : ''}" 
-                    style="position: relative;" 
-                    @click="${() => { this._activeView = nav.id; this._menuOpen = false; }}">
-               <ha-icon icon="${nav.icon}"></ha-icon>
-               <span>${nav.name}</span>
-               ${nav.id === 'whiteboard' && hasNewNotes ? html`<div class="alert-dot"></div>` : ''}
-            </button>
-          `)}
-
           ${customNav.length > 0 ? html`<hr style="width: 50%; opacity: 0.1; margin: 10px 0;">` : ''}
 
           ${customNav.map(nav => html`
@@ -461,41 +452,46 @@ class NightlightDashboard extends LitElement {
     });
   }
 
-  _renderWhiteboard() {
-  const entityId = this.config.notes_entity;
-  const stateObj = this.hass.states[entityId];
-
-  // 1. Safety check for the entity
-  if (!stateObj) {
-    return html`<div class="whiteboard-grid-container">Error: ${entityId} not found.</div>`;
+  async _fetchNotes(entityId) {
+    const result = await this.hass.callWS({
+      type: "todo/item/list",
+      entity_id: entityId,
+    });
+    this._todoItems = result.items || [];
   }
 
-  // 2. Fetch the actual list of items from the attributes
-  // Home Assistant stores the list content in attributes.items
-  const items = stateObj.attributes.items || [];
-
-  return html`
-    <div class="whiteboard-grid-container">
-      <header class="whiteboard-header">
-        Family Notes
-        <button class="add-note-inline" @click="${() => this._showAddNotePrompt(entityId)}">
-          <ha-icon icon="mdi:plus"></ha-icon> New Note
-        </button>
-      </header>
-      
-      <div class="post-it-grid">
-        ${items.length === 0 
-          ? html`<div class="empty-msg">No active notes. Add one above!</div>` 
-          : items.map(item => html`
-            <div class="post-it">
-              <button class="delete-note" @click="${() => this._deleteNote(entityId, item.summary)}">✕</button>
-              <div class="note-content">${item.summary}</div>
-            </div>
-          `)
-        }
-      </div>
-    </div>`;
-}
+  _renderWhiteboard() {
+    const entityId = this.config.notes_entity;
+    
+    // Trigger fetch if we don't have items yet
+    if (!this._todoItems && entityId) {
+      this._fetchNotes(entityId);
+    }
+  
+    const items = this._todoItems || [];
+  
+    return html`
+      <div class="whiteboard-grid-container">
+        <header class="whiteboard-header">
+          Family Notes
+          <button class="add-note-inline" @click="${() => this._showAddNotePrompt(entityId)}">
+            <ha-icon icon="mdi:plus"></ha-icon> New Note
+          </button>
+        </header>
+        
+        <div class="post-it-grid">
+          ${items.length === 0 
+            ? html`<div class="empty-msg">No active notes.</div>` 
+            : items.map(item => html`
+              <div class="post-it">
+                <button class="delete-note" @click="${() => this._deleteNote(entityId, item.uid || item.summary)}">✕</button>
+                <div class="note-content">${item.summary}</div>
+              </div>
+            `)
+          }
+        </div>
+      </div>`;
+  }
   
   async _showAddNotePrompt(entityId) {
     const note = prompt("Enter your note:");
@@ -1484,6 +1480,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
