@@ -63,23 +63,32 @@ class NightlightDashboard extends LitElement {
   // --- Data Management & Lifecycle ---
 
   updated(changedProps) {
-  // 1. Check for chore resets whenever the HASS state updates
-  if (changedProps.has('hass')) {
-    this._checkDailyReset(); 
+    // 1. Check for chore resets whenever the HASS state updates
+    if (changedProps.has('hass')) {
+      this._checkDailyReset(); 
+      
+      // NEW: Auto-refresh whiteboard if the notes entity changed in Home Assistant
+      const oldHass = changedProps.get('hass');
+      if (this._activeView === 'whiteboard' && 
+          oldHass && this.hass.states[this.config.notes_entity] !== oldHass.states[this.config.notes_entity]) {
+        this._fetchNotes(this.config.notes_entity);
+      }
+    }
+  
+    // 2. Refresh calendar data if view/date changes
+    if (changedProps.has('hass') || changedProps.has('_activeView') || 
+        changedProps.has('_calendarMode') || changedProps.has('_referenceDate')) {
+      this._refreshData();
+    }
+  
+    // 3. Force re-render when switching tabs
+    if (changedProps.has('_activeView')) {
+      this.requestUpdate();
+      if (this._activeView === 'whiteboard') {
+         this._fetchNotes(this.config.notes_entity);
+      }
+    }
   }
-
-  // 2. Refresh calendar data if the view, date, or mode changes
-  if (changedProps.has('hass') || changedProps.has('_activeView') || 
-      changedProps.has('_calendarMode') || changedProps.has('_referenceDate')) {
-    this._refreshData();
-  }
-
-  // 3. IMPORTANT: Force a re-render specifically when switching tabs
-  // This ensures the Notes textarea pulls the latest text from your To-do list.
-  if (changedProps.has('_activeView')) {
-    this.requestUpdate();
-  }
-}
 
   /**
    * Centralized Memory Reset: Resets all Todo-list items to 'needs_action' every morning.
@@ -512,15 +521,16 @@ class NightlightDashboard extends LitElement {
   }
   
   async _showAddNotePrompt(entityId) {
-    const note = prompt("Enter your note:");
-    if (note) {
-      await this.hass.callService('todo', 'add_item', {
-        entity_id: entityId,
-        item: note
-      });
-      this.requestUpdate();
-    }
+  const note = prompt("Enter your note:");
+  if (note) {
+    await this.hass.callService('todo', 'add_item', {
+      entity_id: entityId,
+      item: note
+    });
+    // Immediately fetch after adding so you don't have to wait for the next state update
+    this._fetchNotes(entityId); 
   }
+}
   
   async _deleteNote(entityId, summary) {
     // Marks the item as completed, archiving it from the active list
@@ -1498,6 +1508,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.4.0",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
