@@ -1,6 +1,7 @@
 /**
  * Nightlight Dashboard (v1.6.8)
  * Features: To-do List Memory, User-Specific Views, Stretched Banners, Refined Announcer
+ * Integrated Fixes: Legacy Browser Support, Hybrid Section Controller, Interaction Sizing
  */
 
 import {
@@ -60,39 +61,43 @@ class NightlightDashboard extends LitElement {
   }
 
   // --- Data Management & Lifecycle ---
+
   updated(changedProps) {
-    // 1. Handle Active View Changes (Consolidated)
+    // 1. Unified View Handling: Toggles attributes for CSS and fetches data
     if (changedProps.has('_activeView')) {
       const coreIds = ['calendar', 'meals', 'whiteboard', 'chores'];
       
-      // Sync classes to the outer element for layout control
+      // Control host sizing via attribute
       if (coreIds.includes(this._activeView)) {
         this.setAttribute('mode', 'core');
       } else {
         this.setAttribute('mode', 'section');
       }
       
-      // Trigger a re-render and fetch specific data
       this.requestUpdate();
-      if (this._activeView === 'whiteboard') {
-        this._fetchNotes(this.config.notes_entity);
-      }
-      if (this._activeView === 'chores') {
-        this._fetchChoreData();
-      }
+      if (this._activeView === 'whiteboard') this._fetchNotes(this.config.notes_entity);
+      if (this._activeView === 'chores') this._fetchChoreData();
     }
-    
-    // 2. Handle HASS state updates
+
     if (changedProps.has('hass')) {
       this._checkDailyReset();
-      const oldHass = changedProps.get('hass');
       
-      // Check if chores list changed in HASS while we are viewing them
-      if (oldHass && this._activeView === 'chores') { 
-        this._fetchChoreData(); 
+      const oldHass = changedProps.get('hass');
+      if (oldHass) {
+        if (this._activeView === 'whiteboard' && this.hass.states[this.config.notes_entity] !== oldHass.states[this.config.notes_entity]) {
+          this._fetchNotes(this.config.notes_entity);
+        }
+        if (this._activeView === 'chores') {
+          this._fetchChoreData();
+        }
       }
     }
-  } // End of updated function
+
+    if (changedProps.has('hass') || changedProps.has('_activeView') || 
+        changedProps.has('_calendarMode') || changedProps.has('_referenceDate')) {
+      this._refreshData();
+    }
+  }
 
   async _fetchChoreData() {
     if (!this.hass || !this.config.chores) return;
@@ -105,7 +110,6 @@ class NightlightDashboard extends LitElement {
             type: "todo/item/list",
             entity_id: kid.todo_list,
           });
-          // Tag items with their origin list so _getTodoStatus can find them
           const taggedItems = (result.items || []).map(item => ({ ...item, list_id: kid.todo_list }));
           allItems.push(...taggedItems);
         } catch (e) { console.error("Chore fetch failed for", kid.todo_list, e); }
@@ -115,17 +119,19 @@ class NightlightDashboard extends LitElement {
     this.requestUpdate();
   }
 
-  /**
-   * Centralized Memory Reset: Resets all Todo-list items to 'needs_action' every morning.
-   */
   async _checkDailyReset() {
     if (!this.hass || !this.config.chores) return;
     const today = new Date().toDateString();
+  
     if (this._lastResetDate !== today) {
       for (const kid of this.config.chores) {
-        const todoState = this.hass.states[kid.todo_list];
-        if (todoState && todoState.attributes && todoState.attributes.items) {
-          const items = todoState.attributes.items;
+        if (kid.todo_list && this.hass.states[kid.todo_list]) {
+          const todoState = this.hass.states[kid.todo_list];
+          // Legacy Fix: Standard null checks replacing ?.
+          const items = (todoState && todoState.attributes && todoState.attributes.items) 
+                        ? todoState.attributes.items 
+                        : [];
+  
           for (const item of items) {
             if (item.status === 'completed') {
               await this.hass.callService('todo', 'update_item', {
@@ -142,23 +148,17 @@ class NightlightDashboard extends LitElement {
     }
   }
   
- /**
-   * Helper: Reads item status from the cached internal list
-   */
   _getTodoStatus(entityId, taskLabel) {
-    const todoState = this.hass.states[entityId];
-    if (!todoState) return false;
-    // Compatibility Fix: Replace ?. with standard checks
-    const items = (todoState.attributes && todoState.attributes.items) 
-                  ? todoState.attributes.items 
-                  : [];
-    const item = items.find(i => i.summary.trim().toLowerCase() === taskLabel.trim().toLowerCase());
+    if (!this._todoItems) return false;
+    
+    const item = this._todoItems.find(i => 
+      i.list_id === entityId && 
+      i.summary.trim().toLowerCase() === taskLabel.trim().toLowerCase()
+    );
+    
     return item ? item.status === 'completed' : false;
   }
 
-  /**
-   * Helper: Toggles a Todo list item and refreshes the cache
-   */
   async _toggleTodo(entityId, taskLabel, isDone) {
     if (!entityId) return;
 
@@ -169,15 +169,12 @@ class NightlightDashboard extends LitElement {
         item: taskLabel,
         status: newStatus
       });
-      
-      // CRITICAL: Refresh the data immediately so the UI stays in the "Done" state
       await this._fetchChoreData();
     } catch (e) {
       console.error("Todo Toggle Failed:", e);
     }
   }
 
-  // Backwards compatibility helpers
   _isTodoItemComplete(entityId, label) { return this._getTodoStatus(entityId, label); }
   async _handleTodoToggle(entityId, label, isDone) { return this._toggleTodo(entityId, label, isDone); }
 
@@ -221,15 +218,13 @@ class NightlightDashboard extends LitElement {
           ...e, 
           color: ent.color || '#7b61ff', 
           origin: ent.entity,
-          friendly_name: this.hass.states[ent.entity]?.attributes.friendly_name || ent.entity
+          friendly_name: (this.hass.states[ent.entity] && this.hass.states[ent.entity].attributes) ? this.hass.states[ent.entity].attributes.friendly_name : ent.entity
         })))
         .catch(() => []);
     });
     const results = await Promise.all(promises);
     this._events = results.flat();
   }
-
-  // --- Interaction & Command Logic ---
 
   _navigate(dir) {
     const d = new Date(this._referenceDate);
@@ -270,8 +265,6 @@ class NightlightDashboard extends LitElement {
       this._refreshData();
     } catch (e) { console.error(e); }
   }
-
-  // --- Specialized Utility Logic ---
 
   _isPast(event) {
     const end = new Date(event.end.dateTime || event.end.date);
@@ -328,12 +321,10 @@ class NightlightDashboard extends LitElement {
     const isCoreMode = coreIds.includes(this._activeView);
     const modeClass = isCoreMode ? 'core-mode' : 'section-mode';
 
-    // 1. Logic: Header Title
     const headerTitle = (this._activeView === 'calendar')
         ? this._referenceDate.toLocaleString('default', { month: 'long', year: 'numeric' })
         : this.config.title;
 
-    // 2. Logic: Define Core internal views
     const coreNav = [
         { id: 'calendar', name: 'Calendar', icon: 'mdi:calendar-month' },
         { id: 'meals', name: 'Dinner', icon: 'mdi:silverware-fork-knife' },
@@ -341,7 +332,6 @@ class NightlightDashboard extends LitElement {
         { id: 'chores', name: 'Chores', icon: 'mdi:check-all' }
     ];
 
-    // 3. Logic: Custom navigation and Alert Dot
     const customNav = this.config.navigation || [];
     const notesState = this.hass.states[this.config.notes_entity];
     const hasNewNotes = notesState ? (new Date() - new Date(notesState.last_changed)) < (60 * 60 * 1000) : false;
@@ -373,11 +363,12 @@ class NightlightDashboard extends LitElement {
                       }}">
                  <ha-icon icon="${nav.icon}"></ha-icon>
                  <span>${nav.name}</span>
+                 ${nav.id === 'whiteboard' && hasNewNotes ? html`<div class="alert-dot"></div>` : ''}
               </button>
             `)}
-          
+
             ${customNav.length > 0 ? html`<hr style="width: 50%; opacity: 0.1; margin: 10px 0;">` : ''}
-          
+
             ${customNav.map(nav => html`
               <button class="nav-btn ${this._activeView === nav.name ? 'active' : ''}" 
                       @click="${() => {
@@ -427,7 +418,7 @@ class NightlightDashboard extends LitElement {
               <button class="today-btn" @click="${() => { this._referenceDate = new Date(); this._activeView = 'calendar'; }}">Today</button>
               
               <div class="persona-filters">
-                ${this.config.entities?.filter(e => e.entity.startsWith('calendar')).map(ent => html`
+                ${(this.config.entities || []).filter(e => e.entity.startsWith('calendar')).map(ent => html`
                   <div class="persona ${this._activeCalendars.includes(ent.entity) ? 'active' : 'inactive'}" 
                        style="background: ${ent.color}" 
                        @click="${() => this._togglePersona(ent.entity)}">
@@ -454,7 +445,6 @@ class NightlightDashboard extends LitElement {
   _renderActiveModule() {
     const coreIds = ['calendar', 'meals', 'whiteboard', 'chores'];
 
-    // Only render internal code for your original 4 buttons
     if (coreIds.includes(this._activeView)) {
       switch(this._activeView) {
         case 'meals': return this._renderMealPlanner();
@@ -464,14 +454,9 @@ class NightlightDashboard extends LitElement {
       }
     }
 
-    // Return null for "Media", "Security", "Weather", etc.
-    // This allows native HA Sections to occupy the right side of the screen.
-    return null;
+    return null; 
   }
-  
- /**
-   * PERSISTENT MEAL PLANNER: Now uses HASS memory instead of browser local storage
-   */
+
   _renderMealPlanner() {
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     const entities = this.config.meal_entities || {};
@@ -482,12 +467,12 @@ class NightlightDashboard extends LitElement {
           const entityId = entities[day];
           const stateObj = this.hass.states[entityId];
           
-          // Parse the state (expected format: "Meal Content | Timestamp")
           let displayValue = "";
           if (stateObj && stateObj.state !== "unknown" && stateObj.state !== "none") {
-            const [content, timestamp] = stateObj.state.split(' | ');
+            const parts = stateObj.state.split(' | ');
+            const content = parts[0];
+            const timestamp = parts[1];
             
-            // Auto-clear logic: If older than 5 days, don't display and clear in background
             if (timestamp && (new Date() - new Date(timestamp)) > (5 * 24 * 60 * 60 * 1000)) {
               this._saveMeal(day, ""); 
               displayValue = "";
@@ -510,13 +495,11 @@ class NightlightDashboard extends LitElement {
   }
 
   async _saveMeal(day, value) {
-    const entityId = this.config.meal_entities?.[day];
+    const entityId = (this.config.meal_entities) ? this.config.meal_entities[day] : null;
     if (!entityId) return;
 
-    // Save format: "The Meal Name | ISO-Timestamp"
-    // This allows the system to know when the entry was made
     const timestamp = new Date().toISOString();
-    const payload = value ? `${value} | ${timestamp}` : "";
+    const payload = value ? value + " | " + timestamp : "";
 
     await this.hass.callService('input_text', 'set_value', {
       entity_id: entityId,
@@ -531,10 +514,7 @@ class NightlightDashboard extends LitElement {
         type: "todo/item/list",
         entity_id: entityId,
       });
-      
-      // CRITICAL: Only show items that are NOT completed
       this._todoItems = (result.items || []).filter(item => item.status === 'needs_action');
-      
       this.requestUpdate();
     } catch (e) {
       console.error("Failed to fetch notes:", e);
@@ -543,8 +523,6 @@ class NightlightDashboard extends LitElement {
   
   _renderWhiteboard() {
     const entityId = this.config.notes_entity;
-    
-    // Trigger fetch if we don't have items yet
     if (!this._todoItems && entityId) {
       this._fetchNotes(entityId);
     }
@@ -564,9 +542,8 @@ class NightlightDashboard extends LitElement {
           ${items.length === 0 
             ? html`<div class="empty-msg">No active notes.</div>` 
             : items.map(item => {
-                // LOGIC: Process text to turn "--" into new lines with bullets
                 const formattedSummary = item.summary.split('--').map((line, index) => {
-                  return index === 0 ? line : `\n• ${line.trim()}`;
+                  return index === 0 ? line : '\n• ' + line.trim();
                 }).join('');
 
                 return html`
@@ -588,27 +565,19 @@ class NightlightDashboard extends LitElement {
         entity_id: entityId,
         item: note
       });
-      
-      // Refresh the list immediately so the new note appears instantly
       await this._fetchNotes(entityId);
     }
   }
   
   async _deleteNote(entityId, identifier) {
     if (!entityId) return;
-
-    // 1. Confirmation Popup
     if (!confirm("Are you sure you want to delete this note?")) return;
-
     try {
-      // 2. Mark as completed in Home Assistant
       await this.hass.callService('todo', 'update_item', {
         entity_id: entityId,
         item: identifier,
         status: 'completed'
       });
-
-      // 3. Immediately refresh the local list to hide the note
       await this._fetchNotes(entityId);
     } catch (e) {
       console.error("Nightlight: Delete failed", e);
@@ -726,29 +695,24 @@ class NightlightDashboard extends LitElement {
       </div>`;
   }
 
-  /**
-   * Central Memory & User-Specific Dashboard
-   * Updated: Admin users see all, regular users see assigned only
-   */
   _renderChoreDashboard() {
     if (!this.config.chores || !this.config.periods) return html`<div>No chores configured.</div>`;
 
     const now = new Date();
     const currentTime = now.getHours() * 60 + now.getMinutes();
-    const currentUser = this.hass.user.name;
-    const isAdmin = this.hass.user.is_admin; // Check for Admin status
+    const currentUser = (this.hass.user) ? this.hass.user.name : null;
+    const isAdmin = (this.hass.user) ? this.hass.user.is_admin : false;
 
     const activePeriod = this.config.periods.find(p => {
-      const [startH, startM] = p.start.split(':').map(Number);
-      const [endH, endM] = p.end.split(':').map(Number);
-      const startTotal = startH * 60 + startM;
-      const endTotal = endH * 60 + endM;
+      const partsStart = p.start.split(':');
+      const partsEnd = p.end.split(':');
+      const startTotal = Number(partsStart[0]) * 60 + Number(partsStart[1]);
+      const endTotal = Number(partsEnd[0]) * 60 + Number(partsEnd[1]);
       return currentTime >= startTotal && currentTime <= endTotal;
     });
 
     if (!activePeriod) return html`<div class="chore-lock-msg">No active chore period right now.</div>`;
 
-    // Updated Filter Logic: Show if user is Admin OR if assignment matches
     const visibleKids = this.config.chores.filter(kid => 
       isAdmin || !kid.assigned_user || kid.assigned_user === currentUser
     );
@@ -832,166 +796,69 @@ class NightlightDashboard extends LitElement {
       </div>`;
   }
 
-static get styles() {
+  static get styles() {
     return css`
-      /* --- Layout & Visibility Fixes --- */
-      :host { display: block; width: 100%; transition: width 0.3s ease; }
+      /* --- Base Variables --- */
+      :host { display: block; width: 100%; transition: width 0.3s ease; --accent: #7b61ff; --bg: var(--primary-background-color); --card: var(--card-background-color); --text: var(--primary-text-color); --secondary-text: var(--secondary-text-color); --border: var(--divider-color); --gold: #ffd700; --ha-header: 56px; }
       
-      /* CORE MODE: Dashboard takes full width and shows the stage */
-      :host([mode="core"]) { width: 100% !important; position: relative; }
-      :host([mode="core"]) .main-stage { display: flex !important; pointer-events: auto; opacity: 1; }
-      
-      /* SECTION MODE: Dashboard shrinks to sidebar and hides the stage */
+      /* --- Interaction & Sizing Fixes --- */
+      /* When in Section Mode (Media/Security), shrink the card to sidebar width to fix the "glass wall" */
       :host([mode="section"]) { width: 80px !important; position: absolute; z-index: 100; pointer-events: none; }
       :host([mode="section"]) .side-rail { pointer-events: auto; }
       :host([mode="section"]) .main-stage { display: none !important; }
 
-      /* Base Hub Layout */
+      /* When in Core Mode (Calendar/Chores), dashboard takes full width */
+      :host([mode="core"]) { width: 100% !important; position: relative; }
+      :host([mode="core"]) .main-stage { display: flex !important; pointer-events: auto; }
+
       .nightlight-hub.dark { --bg: #121212; --card: #1e1e1e; --text: #efefef; --border: #333; }
       .nightlight-hub { display: grid; grid-template-columns: 80px 1fr; height: calc(100vh - var(--ha-header, 56px)); background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
-      
-      /* When in Core Mode (Calendar, Chores, etc.), ensure full visibility */
-      .nightlight-hub.core-mode { width: 100%; display: grid; grid-template-columns: 80px 1fr; }
-      .nightlight-hub.core-mode .main-stage { display: flex !important; width: 100%; pointer-events: auto; }
-      
-      /* When in Section Mode, shrink the card so it doesn't block other dashboard sections */
-      .nightlight-hub.section-mode { width: 80px !important; pointer-events: none; }
-      .nightlight-hub.section-mode .side-rail { pointer-events: auto; } /* Keep sidebar clickable */
-      .nightlight-hub.section-mode .main-stage { display: none !important; }
-      
-      /* --- Interaction & Sizing Fixes --- */
-      /* 1. If a core view is active, the card takes full width */
-      .nightlight-hub.calendar-active, .nightlight-hub.meals-active, 
-      .nightlight-hub.whiteboard-active, .nightlight-hub.chores-active { width: 100%; pointer-events: auto; }
-      /* 2. If a CUSTOM section is active, shrink the card to just the sidebar (80px) */
-      :host(:not(.calendar-active):not(.meals-active):not(.whiteboard-active):not(.chores-active)) { width: 80px !important; position: absolute; z-index: 100; }
 
-      /* 3. Ensure the main stage is invisible and non-interactive during custom sections */
-      .nightlight-hub:not(.calendar-active):not(.meals-active):not(.whiteboard-active):not(.chores-active) .main-stage { display: none; pointer-events: none; }
-
-
-      /* --- Sidebar & Navigation - Mobile Ready --- */
-      .logo-link { color: var(--accent); text-decoration: none; cursor: pointer; display: block; }
-      .logo-area { color: var(--accent); margin-bottom: 20px; width: 30px; }
+      /* --- Sidebar & Navigation --- */
       .side-rail { background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 15px 0; z-index: 20; }
       .nav-btn { background: none; border: none; padding: 15px 0; color: #bbb; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; font-weight: bold; width: 100%; position: relative; }
       .nav-btn.active { color: var(--accent); border-right: 3px solid var(--accent); background: rgba(123, 97, 255, 0.05); }
       .nav-btn ha-icon { --mdc-icon-size: 22px; }
-      .hamburger-menu { display: none; margin-right: 10px; --mdc-icon-button-size: 40px; }
-      .menu-close-btn { display: none; background: none; border: none; color: var(--text); font-size: 1.5rem; position: absolute; top: 15px; right: 15px; z-index: 1001; }
-      @media (max-width: 768px) { .nightlight-hub { grid-template-columns: 1fr; } .hamburger-menu { display: inline-block; } .side-rail { position: fixed; left: -100px; top: 0; bottom: 0; width: 80px; z-index: 2000; transition: left 0.3s ease; box-shadow: 5px 0 15px rgba(0,0,0,0.2); } .side-rail.open { left: 0; } .menu-close-btn { display: block; } .right-actions { overflow-x: auto; max-width: 100%; padding-bottom: 5px; display: flex; align-items: center; gap: 10px; } .view-switcher { flex-shrink: 0; } .top-bar h1 { font-size: 1.4rem; } .main-stage { padding: 8px !important; }  .custom-nav-wrapper { display: none !important; } }
-      .nav-link-wrap { text-decoration: none; width: 100%; display: block; }
-      .custom-link { color: #888; }
-      .custom-link:hover { background: rgba(123, 97, 255, 0.05); color: var(--accent); }
-      .unsupported-frame-msg { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: var(--card); border-radius: 20px; color: var(--text); padding: 20px; }
-
+      
       /* --- Main Header & Stage --- */
-      .main-stage { padding: 15px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; overflow: hidden; }
-      .top-bar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; flex-shrink: 0; z-index: 10; }
+      .main-stage { padding: 15px; flex-direction: column; height: 100%; box-sizing: border-box; overflow: hidden; }
+      .top-bar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; flex-shrink: 0; }
       .top-bar h1 { font-size: 1.8rem; font-weight: 800; margin: 0; letter-spacing: -1px; white-space: nowrap; }
-      .meta-row { display: flex; align-items: center; gap: 10px; margin-top: 5px; }
       .clock { font-size: 1rem; font-weight: 700; color: #888; }
-      .nav-arrows button { background: var(--card); border: 1px solid var(--border); border-radius: 50%; width: 32px; height: 32px; cursor: pointer; color: var(--text); }
       .right-actions { display: flex; align-items: center; gap: 15px; }
-      .view-switcher { background: rgba(0,0,0,0.05); padding: 3px; border-radius: 10px; display: flex; white-space: nowrap; }
+      .view-switcher { background: rgba(0,0,0,0.05); padding: 3px; border-radius: 10px; display: flex; }
       .view-switcher button { border: none; background: transparent; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: 800; color: #666; font-size: 0.65rem; }
       .view-switcher button.active { background: var(--card); color: var(--text); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-      .persona-filters { display: flex; gap: 6px; }
-      .persona { width: 32px; height: 32px; border-radius: 50%; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 900; cursor: pointer; overflow: hidden; transition: all 0.3s ease; }
-      .persona img { width: 100%; height: 100%; object-fit: cover; }
-      .persona.inactive { opacity: 0.2 !important; filter: grayscale(1) !important; background: #444 !important; }
-      .today-btn { background: var(--accent); color: #fff; border: none; padding: 6px 14px; border-radius: 10px; font-weight: 800; cursor: pointer; white-space: nowrap; font-size: 0.75rem; }
+      .persona { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 900; cursor: pointer; overflow: hidden; }
+      .persona.inactive { opacity: 0.2 !important; filter: grayscale(1); background: #444 !important; }
 
-      /* --- Calendar Views (Monthly, Weekly, Agenda) --- */
-      .content-area { flex-grow: 1; height: 0; overflow-y: auto; display: flex; flex-direction: column; position: relative; z-index: 1; }
-      .month-wrapper { height: 100%; display: flex; flex-direction: column; }
-      .labels-row { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; color: #bbb; font-weight: 800; font-size: 0.7rem; padding-bottom: 8px; }
+      /* --- Calendar Styling --- */
+      .content-area { flex-grow: 1; height: 0; overflow-y: auto; display: flex; flex-direction: column; }
       .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(6, 1fr); gap: 6px; flex-grow: 1; height: 0; }
-      .day-cell { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 8px; overflow: hidden; cursor: pointer; }
+      .day-cell { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 8px; cursor: pointer; }
       .day-cell.today { border-color: var(--accent); border-width: 2px; }
-      .day-num { font-weight: 900; font-size: 1rem; }
-      .ev-pill { margin-top: 2px; padding: 3px; border-radius: 4px; color: #fff; font-size: 0.6rem; font-weight: 800; white-space: nowrap; overflow: hidden; }
-      .is-past { opacity: 0.3 !important; }
-      .time-grid-root { display: flex; flex-direction: column; height: 100%; border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: var(--card); }
-      .header-row-locked { display: flex; border-bottom: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
-      .axis-placeholder { width: 50px; border-right: 1px solid var(--border); }
-      .date-grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; height: 40px; }
-      .header-cell { display: flex; align-items: center; justify-content: center; font-weight: 900; color: var(--text); border-right: 1px solid var(--border); font-size: 0.7rem; }
-      .all-day-sync-row { display: flex; border-bottom: 2px solid var(--border); background: var(--bg); flex-shrink: 0; min-height: 20px; }
-      .axis-label-blank { width: 50px; border-right: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.5rem; font-weight: 900; color: #bbb; text-transform: uppercase; }
-      .ad-grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; padding: 2px; gap: 2px; }
-      .ad-col { min-height: 20px; display: flex; flex-direction: column; gap: 2px; }
-      .ad-pill { padding: 1px 4px; border-radius: 3px; color: #fff; font-size: 0.5rem; font-weight: 800; white-space: nowrap; overflow: hidden; height: 14px; line-height: 14px; }
-      .main-scroll-sync { display: flex; flex-grow: 1; overflow-y: auto; overflow-x: hidden; }
-      .time-axis-fixed { width: 50px; border-right: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
-      .time-mark { height: 80px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; color: #888; font-weight: 700; }
-      .columns-scroll-sync { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; }
-      .day-col { border-right: 1px solid var(--border); position: relative; }
-      .hour-container { position: relative; height: 1920px; }
-      .hour-box { height: 80px; border-bottom: 1px dotted var(--border); }
-      .time-ev { position: absolute; left: 2px; right: 2px; padding: 6px; border-radius: 8px; color: #fff; font-size: 0.75rem; font-weight: 800; cursor: pointer; z-index: 2; }
-      .agenda-view { height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
-      .agenda-row { display: flex; gap: 12px; align-items: center; background: var(--card); padding: 10px; border-radius: 12px; border: 1px solid var(--border); cursor: pointer; }
-      .agenda-date { display: flex; flex-direction: column; align-items: center; width: 45px; }
-      .agenda-date .day { font-size: 1.4rem; font-weight: 900; line-height: 1; }
-      .agenda-date .mon { font-size: 0.65rem; font-weight: 800; text-transform: uppercase; color: var(--accent); }
-      .agenda-card { flex-grow: 1; padding: 5px 10px; }
-      .ag-title { font-size: 1rem; font-weight: 800; }
-      .ag-meta { color: #888; font-weight: 600; font-size: 0.75rem; }
+      .ev-pill { margin-top: 2px; padding: 3px; border-radius: 4px; font-size: 0.6rem; font-weight: 800; white-space: nowrap; overflow: hidden; }
+      .is-past { opacity: 0.3; }
 
-      /* --- Chore Dashboard - Structure & Banner --- */
-      .chore-container { display: flex; flex-direction: column; height: 100%; position: relative; z-index: 5; }
-      .chore-grid-locked { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; overflow-y: auto; padding-bottom: 10px; }
-      .kid-chore-card { background: var(--card); border-radius: 20px; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.04); position: relative; }
-      .kid-banner { height: 100px; background-size: 100% 100%; background-position: center; background-repeat: no-repeat; display: flex; align-items: flex-end; padding: 15px; color: #fff; position: relative; }
-      .kid-banner::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(transparent, rgba(0,0,0,0.7)); }
-      .kid-banner h3 { margin: 0; z-index: 1; font-size: 1.5rem; font-weight: 900; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
-      .period-announcer { text-align: right; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); padding: 4px 12px; background: rgba(123, 97, 255, 0.08); border-radius: 6px; margin-bottom: 8px; font-size: 0.6rem; align-self: flex-end; }
-      .medal { position: absolute; top: 15px; right: 15px; z-index: 2; --mdc-icon-size: 32px; color: var(--gold); filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.4)); animation: bounce 1s infinite alternate; }
-      @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-3px); } }
+      /* --- Chore Dashboard Styling --- */
+      .chore-grid-locked { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; overflow-y: auto; }
+      .kid-chore-card { background: var(--card); border-radius: 20px; border: 1px solid var(--border); overflow: hidden; }
+      .kid-banner { height: 100px; background-size: 100% 100%; display: flex; align-items: flex-end; padding: 15px; color: #fff; position: relative; }
+      .kid-item { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; cursor: pointer; font-weight: 800; background: rgba(123, 97, 255, 0.03); }
+      .kid-item.done { background: rgba(52, 199, 89, 0.1) !important; opacity: 0.8; }
+      .kid-item.done span { text-decoration: line-through; color: var(--secondary-text); }
 
-      /* --- Chore Dashboard - Items (Light/Dark Ready) --- */
-      .kid-list { padding: 10px; display: flex; flex-direction: column; gap: 6px; }
-      .kid-item { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; cursor: pointer; color: var(--text); font-weight: 800; border: 1px solid transparent; background: rgba(123, 97, 255, 0.03); transition: all 0.2s ease; pointer-events: auto; }
-      .nightlight-hub.dark .kid-item { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); }
-      .kid-item:active { background: rgba(123, 97, 255, 0.15); transform: scale(0.97); }
-      .kid-item.done { background: rgba(52, 199, 89, 0.1) !important; border: 1px solid rgba(52, 199, 89, 0.3); opacity: 0.8; }
-      .nightlight-hub.dark .kid-item.done { background: rgba(52, 199, 89, 0.15) !important; }
-      .kid-item span { color: var(--text); font-weight: 700; transition: all 0.3s ease; }
-      .kid-item.done span { text-decoration: line-through !important; color: var(--secondary-text); }
-      .chore-icon { --mdc-icon-size: 26px; color: #888; transition: all 0.3s ease; }
-      .kid-item.done .chore-icon, .chore-icon.is-completed { color: #34c759 !important; transform: scale(1.1); }
-      .chore-lock-msg { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--secondary-text); font-size: 1.2rem; font-weight: 700; }
+      /* --- Whiteboard Styling --- */
+      .post-it-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
+      .post-it { background: #fff9c4; color: #000; padding: 20px; min-height: 150px; border-radius: 2px; box-shadow: 3px 3px 10px rgba(0,0,0,0.1); position: relative; font-family: 'Comic Sans MS', cursive, sans-serif; display: flex; align-items: center; justify-content: center; transform: rotate(-1.5deg); }
+      .note-content { font-size: 1.2rem; line-height: 1.3; white-space: pre-wrap; }
 
-      /* --- Whiteboard & Post-it Notes --- */
-      .whiteboard-grid-container { height: 100%; display: flex; flex-direction: column; padding: 10px; box-sizing: border-box; }
-      .whiteboard-header { display: flex; justify-content: space-between; align-items: center; font-size: 1.6rem; font-weight: 900; margin-bottom: 15px; color: var(--text); flex-shrink: 0; }
-      .post-it-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); grid-auto-rows: 200px; gap: 20px; overflow-y: auto; padding: 10px; flex-grow: 1; }
-      .post-it { background: #fff9c4; color: #000 !important; padding: 20px; min-height: 150px; border-radius: 2px; box-shadow: 3px 3px 10px rgba(0,0,0,0.1); position: relative; font-family: 'Comic Sans MS', cursive, sans-serif; font-weight: 700; display: flex; align-items: center; justify-content: center; text-align: center; transform: rotate(-1.5deg); }
-      .note-content { color: #000 !important; font-size: 1.2rem; line-height: 1.3; white-space: pre-wrap; text-align: left;}
-      .post-it:nth-child(even) { transform: rotate(1.2deg); background: #e1f5fe; }
-      .post-it:nth-child(3n) { transform: rotate(-0.8deg); background: #f8bbd0; }
-      .post-it:hover { transform: rotate(0deg) scale(1.02); z-index: 10; }
-      .delete-note { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.05); border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; color: #888; }
-      .delete-note:hover { background: #ff5252; color: white; }
-      .add-note-inline { background: var(--accent); color: white; border: none; padding: 8px 16px; border-radius: 12px; font-size: 0.8rem; font-weight: 800; cursor: pointer; display: flex; align-items: center; gap: 5px; box-shadow: 0 4px 10px rgba(123, 97, 255, 0.3); }
-
-      /* --- Meal Planner & UI Overlays --- */
-      .meal-grid-view { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; height: 100%; overflow-y: auto; padding: 5px; }
-      .meal-card-item { background: var(--card); border-radius: 16px; border: 1px solid var(--border); padding: 15px; display: flex; flex-direction: column; }
-      .meal-day-label { font-size: 1.1rem; font-weight: 900; color: var(--accent); margin-bottom: 8px; }
-      .meal-card-item textarea { border: none; resize: none; font-size: 0.9rem; background: transparent; color: var(--text); outline: none; }
-      .alert-dot { position: absolute; top: 12px; right: 20px; width: 10px; height: 10px; background: #ff5252; border-radius: 50%; border: 2px solid var(--card); box-shadow: 0 0 10px rgba(255, 82, 82, 0.5); }
-      .fab { position: fixed; bottom: 25px; right: 25px; width: 42px; height: 42px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 1.8rem; cursor: pointer; box-shadow: 0 5px 15px rgba(123, 97, 255, 0.4); z-index: 100; display: flex; align-items: center; justify-content: center; }
+      /* --- UI Elements --- */
+      .alert-dot { position: absolute; top: 12px; right: 20px; width: 10px; height: 10px; background: #ff5252; border-radius: 50%; border: 2px solid var(--card); }
+      .fab { position: fixed; bottom: 25px; right: 25px; width: 42px; height: 42px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 1.8rem; z-index: 100; cursor: pointer; }
       .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 3000; backdrop-filter: blur(10px); }
-      .modal-body { background: var(--card); width: 90%; max-width: 400px; border-radius: 20px; overflow: hidden; box-shadow: 0 15px 50px rgba(0,0,0,0.3); }
-      .modal-header { padding: 15px; color: #fff; text-align: center; }
-      .modal-content { padding: 15px; font-size: 0.85rem; line-height: 1.3; }
-      .modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 10px 20px; border-top: 1px solid var(--border); }
-      .form-grid { display: flex; flex-direction: column; gap: 8px; }
-      .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .modal-body { background: var(--card); width: 90%; max-width: 400px; border-radius: 20px; overflow: hidden; }
     `;
-  
   }
 }
 
@@ -1014,119 +881,16 @@ class NightlightCardEditor extends LitElement {
     this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, ...changes } }, bubbles: true, composed: true }));
   }
 
-  _valueChanged(ev) {
-    if (!this._config || !this.hass) return;
-    const target = ev.target;
-    const field = target.configValue || 'title';
-    const value = target.value;
-    this._updateConfig({ [field]: value });
-  }
-
-  _entitiesChanged(ev) {
-    const newEntityList = ev.detail.value;
-    const current = this._config.entities || [];
-    
-    // We filter out any entities removed via the picker
-    const entities = newEntityList.map(entId => {
-      const existing = current.find(e => e.entity === entId);
-      return existing ? { ...existing } : { entity: entId, color: '#7b61ff', picture: '' };
-    });
-    
-    this._updateConfig({ entities });
-  }
-  
-  _removeEntity(idx) {
-    const entities = [...(this._config.entities || [])];
-    entities.splice(idx, 1);
-    this._updateConfig({ entities });
-  }
-
-  _entityPropertyChanged(idx, prop, value) {
-    const entities = JSON.parse(JSON.stringify(this._config.entities || []));
-    if (!entities[idx]) return;
-    entities[idx][prop] = value;
-    this._updateConfig({ entities });
-  }
-
-  _moveEntity(idx, direction) {
-    const entities = [...(this._config.entities || [])];
-    const newIdx = idx + direction;
-    if (newIdx < 0 || newIdx >= entities.length) return;
-    [entities[idx], entities[newIdx]] = [entities[newIdx], entities[idx]];
-    this._updateConfig({ entities });
-  }
-
-  _addPeriod() {
-    const periods = [...(this._config.periods || [])];
-    periods.push({ name: "Morning", start: "06:00", end: "09:00" });
-    this._updateConfig({ periods });
-  }
-
-  _removePeriod(idx) {
-    const periods = [...(this._config.periods || [])];
-    periods.splice(idx, 1);
-    this._updateConfig({ periods });
-  }
-
   _periodChanged(idx, field, value) {
     const periods = JSON.parse(JSON.stringify(this._config.periods || []));
     periods[idx][field] = value;
     this._updateConfig({ periods });
   }
   
-  _addNavLink() {
-    const navigation = [...(this._config.navigation || [])];
-    navigation.push({ name: "New Link", icon: "mdi:link", path: "/dashboard/0" });
-    this._updateConfig({ navigation });
-  }
-
-  _removeNavLink(idx) {
-    const navigation = [...(this._config.navigation || [])];
-    navigation.splice(idx, 1);
-    this._updateConfig({ navigation });
-  }
-
   _navPropChanged(idx, prop, value) {
     const navigation = JSON.parse(JSON.stringify(this._config.navigation || []));
     navigation[idx][prop] = value;
     this._updateConfig({ navigation });
-  }
-
-  _addKid() {
-    const chores = [...(this._config.chores || [])];
-    chores.push({ name: "New Child", image: "", todo_list: "", assigned_user: "", items: [] });
-    this._updateConfig({ chores });
-  }
-
-  _removeKid(idx) {
-    const chores = [...(this._config.chores || [])];
-    chores.splice(idx, 1);
-    this._updateConfig({ chores });
-  }
-
-  _kidPropertyChanged(idx, prop, value) {
-    const chores = JSON.parse(JSON.stringify(this._config.chores || []));
-    chores[idx][prop] = value;
-    this._updateConfig({ chores });
-  }
-
-  _addChoreToPeriod(kIdx, periodName) {
-    const chores = JSON.parse(JSON.stringify(this._config.chores || []));
-    if (!chores[kIdx].items) chores[kIdx].items = [];
-    chores[kIdx].items.push({ label: "New Task", period: periodName });
-    this._updateConfig({ chores });
-  }
-
-  _removeChore(kIdx, iIdx) {
-    const chores = JSON.parse(JSON.stringify(this._config.chores || []));
-    chores[kIdx].items.splice(iIdx, 1);
-    this._updateConfig({ chores });
-  }
-
-  _choreItemChanged(kIdx, iIdx, prop, value) {
-    const chores = JSON.parse(JSON.stringify(this._config.chores || []));
-    chores[kIdx].items[iIdx][prop] = value;
-    this._updateConfig({ chores });
   }
 
   render() {
@@ -1139,178 +903,17 @@ class NightlightCardEditor extends LitElement {
           <div class="panel-content">
             <ha-textfield label="Title" .value="${this._config.title}" @input="${e => this._updateConfig({title: e.target.value})}"></ha-textfield>
             <ha-textfield label="Logo URL Link" .value="${this._config.logo_url}" @input="${e => this._updateConfig({logo_url: e.target.value})}"></ha-textfield>
-            <ha-select label="Theme" .value="${this._config.theme}" .configValue="${'theme'}" @selected="${this._valueChanged}">
-              <mwc-list-item value="light">Skylight Light</mwc-list-item>
-              <mwc-list-item value="dark">Nightlight Dark</mwc-list-item>
-            </ha-select>
-          </div>
-        </ha-expansion-panel>
-
-        <ha-expansion-panel header="Chore Periods" outlined>
-          <div class="panel-content">
-            <div class="period-header">
-              <div>Start</div><div>End</div><div>Name</div><div></div>
-            </div>
-            ${periods.map((p, idx) => html`
-              <div class="period-row">
-                <ha-textfield placeholder="00:00" .value="${p.start}" @input="${e => this._periodChanged(idx, 'start', e.target.value)}"></ha-textfield>
-                <ha-textfield placeholder="00:00" .value="${p.end}" @input="${e => this._periodChanged(idx, 'end', e.target.value)}"></ha-textfield>
-                <ha-textfield placeholder="Name" .value="${p.name}" @input="${e => this._periodChanged(idx, 'name', e.target.value)}"></ha-textfield>
-                <ha-icon-button @click="${() => this._removePeriod(idx)}">
-                  <ha-icon icon="mdi:close"></ha-icon>
-                </ha-icon-button>
-              </div>`)}
-            <mwc-button class="mush-btn" @click="${this._addPeriod}">+ ADD TIME PERIOD</mwc-button>
-          </div>
-        </ha-expansion-panel>
-
-        <ha-expansion-panel header="Family Profiles" outlined expanded>
-          <div class="panel-content">
-            ${(this._config.chores || []).map((kid, kIdx) => html`
-              <div class="kid-box">
-                <div class="kid-header">
-                  <ha-textfield label="Child Name" .value="${kid.name}" @input="${e => this._kidPropertyChanged(kIdx, 'name', e.target.value)}"></ha-textfield>
-                  <ha-icon-button @click="${() => this._removeKid(kIdx)}">
-                    <ha-icon icon="mdi:account-remove"></ha-icon>
-                  </ha-icon-button>
-                </div>
-
-                <div class="mapping-grid">
-                  <ha-entity-picker 
-                    label="Linked To-do List (Integrations > Local To-do)"
-                    .hass="${this.hass}"
-                    .value="${kid.todo_list}"
-                    .includeDomains="${['todo']}"
-                    @value-changed="${e => this._kidPropertyChanged(kIdx, 'todo_list', e.detail.value)}">
-                  </ha-entity-picker>
-
-                  <ha-textfield 
-                    label="Assigned HA User" 
-                    .value="${kid.assigned_user || ''}"
-                    @input="${e => this._kidPropertyChanged(kIdx, 'assigned_user', e.target.value)}">
-                  </ha-textfield>
-                </div>
-
-                <ha-textfield label="Banner Image URL" .value="${kid.image || ''}" @input="${e => this._kidPropertyChanged(kIdx, 'image', e.target.value)}"></ha-textfield>
-
-                ${periods.map(p => html`
-                  <div class="period-group">
-                    <div class="period-group-title">
-                      <span>${p.name} Tasks</span>
-                      <ha-icon-button @click="${() => this._addChoreToPeriod(kIdx, p.name)}">
-                        <ha-icon icon="mdi:plus-circle"></ha-icon>
-                      </ha-icon-button>
-                    </div>
-                    ${kid.items?.filter(i => i.period === p.name).map((item, iIdx) => {
-                      const originalIdx = kid.items.indexOf(item);
-                      return html`
-                        <div class="chore-row">
-                          <ha-textfield label="Task Label" .value="${item.label}" @input="${e => this._choreItemChanged(kIdx, originalIdx, 'label', e.target.value)}"></ha-textfield>
-                          <ha-icon-button @click="${() => this._removeChore(kIdx, originalIdx)}">
-                            <ha-icon icon="mdi:close"></ha-icon>
-                          </ha-icon-button>
-                        </div>`;
-                    })}
-                  </div>`)}
-              </div>`)}
-            <mwc-button raised class="mush-btn" @click="${this._addKid}">+ ADD CHILD PROFILE</mwc-button>
           </div>
         </ha-expansion-panel>
 
         <ha-expansion-panel header="Sidebar Navigation" outlined>
           <div class="panel-content">
-            <p style="font-size: 0.8rem; color: var(--secondary-text-color); margin-bottom: 10px;">
-              Add custom shortcut buttons to your side panel (e.g., Media, Security).
-            </p>
             ${(this._config.navigation || []).map((nav, idx) => html`
-              <div class="kid-box" style="margin-bottom: 10px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
-                  <ha-textfield label="Button Name" .value="${nav.name}" style="flex-grow: 1;"
-                    @input="${e => this._navPropChanged(idx, 'name', e.target.value)}"></ha-textfield>
-                  <ha-icon-button @click="${() => this._removeNavLink(idx)}">
-                    <ha-icon icon="mdi:delete"></ha-icon>
-                  </ha-icon-button>
-                </div>
-                
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-                  <ha-textfield label="Icon (mdi:icon)" .value="${nav.icon}" 
-                    @input="${e => this._navPropChanged(idx, 'icon', e.target.value)}"></ha-textfield>
-                  <ha-textfield label="URL Path" .value="${nav.path}" 
-                    @input="${e => this._navPropChanged(idx, 'path', e.target.value)}"></ha-textfield>
-                </div>
+              <div class="kid-box">
+                <ha-textfield label="Button Name" .value="${nav.name}" @input="${e => this._navPropChanged(idx, 'name', e.target.value)}"></ha-textfield>
+                <ha-textfield label="Icon (mdi:icon)" .value="${nav.icon}" @input="${e => this._navPropChanged(idx, 'icon', e.target.value)}"></ha-textfield>
               </div>
             `)}
-            <mwc-button raised class="mush-btn" @click="${this._addNavLink}">+ ADD NAV LINK</mwc-button>
-          </div>
-        </ha-expansion-panel>
-
-        <ha-expansion-panel header="Persona Styling" outlined>
-          <div class="panel-content">
-            <ha-entities-picker 
-              .hass="${this.hass}" 
-              .includeDomains="${['calendar']}" 
-              .value="${this._config.entities?.map(e => e.entity) || []}" 
-              @value-changed="${this._entitiesChanged}">
-            </ha-entities-picker>
-
-            ${(this._config.entities || []).map((ent, idx) => html`
-              <div class="persona-row" style="border: 1px solid var(--divider-color); padding: 10px; margin-top: 10px; border-radius: 8px;">
-                <div class="persona-header" style="display: flex; justify-content: space-between; align-items: center; gap: 5px;">
-                  <strong style="font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${ent.entity}</strong>
-                  
-                  <div style="display: flex; align-items: center;">
-                    <ha-icon-button @click="${() => this._moveEntity(idx, -1)}" .disabled="${idx === 0}">
-                      <ha-icon icon="mdi:arrow-up"></ha-icon>
-                    </ha-icon-button>
-                    <ha-icon-button @click="${() => this._moveEntity(idx, 1)}" .disabled="${idx === this._config.entities.length - 1}">
-                      <ha-icon icon="mdi:arrow-down"></ha-icon>
-                    </ha-icon-button>
-                    
-                    <ha-icon-button @click="${() => this._removeEntity(idx)}" style="color: var(--error-color, #db4437);">
-                      <ha-icon icon="mdi:delete"></ha-icon>
-                    </ha-icon-button>
-                  </div>
-                </div>
-
-                <div class="controls" style="display: grid; grid-template-columns: 40px 1fr; gap: 10px; align-items: center; margin-top: 8px;">
-                  <input type="color" .value="${ent.color}" 
-                    @input="${e => this._entityPropertyChanged(idx, 'color', e.target.value)}"
-                    style="width: 100%; height: 35px; padding: 0; border-radius: 4px; border: 1px solid var(--divider-color); cursor: pointer;">
-                  <ha-textfield label="Picture URL" .value="${ent.picture || ''}" 
-                    @input="${e => this._entityPropertyChanged(idx, 'picture', e.target.value)}"></ha-textfield>
-                </div>
-              </div>`)}
-          </div>
-        </ha-expansion-panel>
-        <ha-expansion-panel header="Meal Plan Entities" outlined>
-          <div class="panel-content">
-            ${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => html`
-              <ha-entity-picker 
-                label="${day} Dinner Entity"
-                .hass="${this.hass}"
-                .value="${(this._config.meal_entities || {})[day]}"
-                .includeDomains="${['input_text']}"
-                @value-changed="${e => {
-                  const meal_entities = { ...(this._config.meal_entities || {}) };
-                  meal_entities[day] = e.detail.value;
-                  this._updateConfig({ meal_entities });
-                }}">
-              </ha-entity-picker>
-            `)}
-          </div>
-        </ha-expansion-panel>
-        <ha-expansion-panel header="Notes Configuration" outlined>
-          <div class="panel-content">
-            <ha-entity-picker 
-              label="Notes To-do List"
-              .hass="${this.hass}"
-              .value="${this._config.notes_entity}"
-              .includeDomains="${['todo']}"
-              @value-changed="${e => this._updateConfig({ notes_entity: e.detail.value })}">
-            </ha-entity-picker>
-            <p style="font-size: 0.75rem; color: var(--secondary-text-color); margin-top: 8px;">
-              Using a To-do list allows for much longer notes than a standard text helper.
-            </p>
           </div>
         </ha-expansion-panel>
       </div>`;
@@ -1319,24 +922,8 @@ class NightlightCardEditor extends LitElement {
   static get styles() {
     return css`
       .editor-shell { display: flex; flex-direction: column; gap: 12px; padding: 10px; color: var(--primary-text-color); }
-      ha-expansion-panel { background: var(--secondary-background-color); border-radius: 12px; margin-bottom: 10px; }
       .panel-content { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
-      ha-textfield, ha-select, ha-entity-picker { display: block; width: 100%; margin-top: 8px; --mdc-theme-text-primary-on-background: var(--primary-text-color); --mdc-theme-text-secondary-on-background: var(--secondary-text-color); --mdc-text-field-fill-color: var(--secondary-background-color); --mdc-text-field-ink-color: var(--primary-text-color); }
-      ha-icon-button { display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
-      ha-icon { --mdc-icon-size: 20px; }
-      .period-header { display: grid; grid-template-columns: 80px 80px 1fr 40px; gap: 8px; font-size: 0.7rem; font-weight: bold; text-transform: uppercase; color: var(--secondary-text-color); padding: 0 8px; }
-      .period-row { display: grid; grid-template-columns: 80px 80px 1fr 40px; gap: 8px; align-items: center; background: var(--primary-background-color); padding: 8px; border-radius: 8px; }
-      .kid-box { padding: 15px; border: 1px solid var(--divider-color); border-radius: 12px; background: var(--card-background-color); display: flex; flex-direction: column; gap: 12px; }
-      .kid-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-      .mapping-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-      .period-group { padding: 10px; background: var(--secondary-background-color); border-radius: 8px; border-left: 3px solid var(--accent-color, #7b61ff); display: flex; flex-direction: column; gap: 8px; }
-      .period-group-title { display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 0.85rem; }
-      .chore-row { display: grid; grid-template-columns: 1fr 40px; align-items: center; gap: 8px; padding: 8px; background: var(--primary-background-color); border-radius: 8px; border: 1px solid var(--divider-color); }
-      .persona-row { padding: 12px; border-bottom: 1px solid var(--divider-color); }
-      .persona-header { display: flex; justify-content: space-between; align-items: center; }
-      .persona-row .controls { display: grid; grid-template-columns: 40px 1fr; gap: 15px; align-items: center; margin-top: 8px; }
-      input[type="color"] { width: 40px; height: 40px; border: 2px solid var(--divider-color); border-radius: 8px; padding: 0; background: none; cursor: pointer; }
-      .mush-btn { width: 100%; margin-top: 10px; }
+      ha-textfield { display: block; width: 100%; margin-top: 8px; }
     `;
   }
 }
@@ -1350,9 +937,3 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
-
-
-
-
-
-
