@@ -358,12 +358,24 @@ class NightlightDashboard extends LitElement {
             ${coreNav.map(nav => html`
               <button class="nav-btn ${this._activeView === nav.id ? 'active' : ''}" 
                       @click="${() => {
-                        this.hass.callService('input_select', 'select_option', {
-                          entity_id: 'input_select.active_hub_view',
-                          option: nav.name 
-                        });
-                        this._activeView = nav.id; 
+                        // Always update local state for sidebar highlighting
+                        this._activeView = nav.id || nav.name; 
                         this._menuOpen = false;
+                      
+                        // Broadcast to the Helper ONLY if it's a custom section
+                        const coreIds = ['calendar', 'meals', 'whiteboard', 'chores'];
+                        if (!coreIds.includes(this._activeView) && this.config.view_controller) {
+                          this.hass.callService('input_select', 'select_option', {
+                            entity_id: this.config.view_controller,
+                            option: nav.name 
+                          });
+                        } else if (this.config.view_controller) {
+                          // Set helper to "Main" or "None" when core views are active so sections hide
+                          this.hass.callService('input_select', 'select_option', {
+                            entity_id: this.config.view_controller,
+                            option: 'None' 
+                          });
+                        }
                       }}">
                  <ha-icon icon="${nav.icon}"></ha-icon>
                  <span>${nav.name}</span>
@@ -440,9 +452,22 @@ class NightlightDashboard extends LitElement {
   }
 
   _renderActiveModule() {
-    // We return null because the content is now handled by 
-    // native Home Assistant Sections, not this JavaScript function.
-    return null; 
+    // 1. Define your core IDs that should still render "the old way"
+    const coreIds = ['calendar', 'meals', 'whiteboard', 'chores'];
+
+    // 2. If it's a core view, use the internal render functions
+    if (coreIds.includes(this._activeView)) {
+      switch(this._activeView) {
+        case 'meals': return this._renderMealPlanner();
+        case 'whiteboard': return this._renderWhiteboard();
+        case 'chores': return this._renderChoreDashboard();
+        default: return this._renderCalendarView();
+      }
+    }
+
+    // 3. For everything else (Media, Security, etc.), return null
+    // This makes the card "empty" so your native Sections can show up next to it.
+    return null;
   }
   
  /**
@@ -1295,6 +1320,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
