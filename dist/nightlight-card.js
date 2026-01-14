@@ -357,11 +357,16 @@ class NightlightDashboard extends LitElement {
           <div class="nav-items">
             ${coreNav.map(nav => html`
               <button class="nav-btn ${this._activeView === nav.id ? 'active' : ''}" 
-                      style="position: relative;" 
-                      @click="${() => { this._activeView = nav.id; this._menuOpen = false; }}">
+                      @click="${() => {
+                        this.hass.callService('input_select', 'select_option', {
+                          entity_id: 'input_select.active_hub_view',
+                          option: nav.name 
+                        });
+                        this._activeView = nav.id; 
+                        this._menuOpen = false;
+                      }}">
                  <ha-icon icon="${nav.icon}"></ha-icon>
                  <span>${nav.name}</span>
-                 ${nav.id === 'whiteboard' && hasNewNotes ? html`<div class="alert-dot"></div>` : ''}
               </button>
             `)}
           
@@ -435,23 +440,9 @@ class NightlightDashboard extends LitElement {
   }
 
   _renderActiveModule() {
-    const customMatch = (this.config.navigation || []).find(n => n.name === this._activeView);
-  
-    // If a custom sidebar button is active, show it in an iframe
-    if (customMatch) {
-      return html`
-        <iframe src="${customMatch.path}${customMatch.path.includes('?') ? '&' : '?'}kiosk" 
-                style="width: 100%; height: 100%; border: none; border-radius: 20px; background: var(--card);">
-        </iframe>`;
-    }
-  
-    // Fallback to standard views
-    switch(this._activeView) {
-      case 'meals': return this._renderMealPlanner();
-      case 'whiteboard': return this._renderWhiteboard();
-      case 'chores': return this._renderChoreDashboard();
-      default: return this._renderCalendarView();
-    }
+    // We return null because the content is now handled by 
+    // native Home Assistant Sections, not this JavaScript function.
+    return null; 
   }
   
  /**
@@ -1304,6 +1295,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
