@@ -60,10 +60,11 @@ class NightlightDashboard extends LitElement {
   }
 
   // --- Data Management & Lifecycle ---
-
   updated(changedProps) {
+    // 1. Handle Active View Changes (Consolidated)
     if (changedProps.has('_activeView')) {
       const coreIds = ['calendar', 'meals', 'whiteboard', 'chores'];
+      
       // Sync classes to the outer element for layout control
       if (coreIds.includes(this._activeView)) {
         this.setAttribute('mode', 'core');
@@ -71,27 +72,27 @@ class NightlightDashboard extends LitElement {
         this.setAttribute('mode', 'section');
       }
       
-      // Data fetching
-      if (this._activeView === 'whiteboard') this._fetchNotes(this.config.notes_entity);
-      if (this._activeView === 'chores') this._fetchChoreData();
+      // Trigger a re-render and fetch specific data
+      this.requestUpdate();
+      if (this._activeView === 'whiteboard') {
+        this._fetchNotes(this.config.notes_entity);
+      }
+      if (this._activeView === 'chores') {
+        this._fetchChoreData();
+      }
     }
     
+    // 2. Handle HASS state updates
     if (changedProps.has('hass')) {
       this._checkDailyReset();
       const oldHass = changedProps.get('hass');
+      
+      // Check if chores list changed in HASS while we are viewing them
       if (oldHass && this._activeView === 'chores') { 
         this._fetchChoreData(); 
       }
     }
-  }
-
-    if (changedProps.has('_activeView')) {
-      this.requestUpdate();
-      if (this._activeView === 'whiteboard') this._fetchNotes(this.config.notes_entity);
-      // Fetch fresh chore data immediately when switching to the tab
-      if (this._activeView === 'chores') this._fetchChoreData();
-    }
-  }
+  } // End of updated function
 
   async _fetchChoreData() {
     if (!this.hass || !this.config.chores) return;
@@ -120,16 +121,11 @@ class NightlightDashboard extends LitElement {
   async _checkDailyReset() {
     if (!this.hass || !this.config.chores) return;
     const today = new Date().toDateString();
-  
     if (this._lastResetDate !== today) {
       for (const kid of this.config.chores) {
-        if (kid.todo_list && this.hass.states[kid.todo_list]) {
-          const todoState = this.hass.states[kid.todo_list];
-          // Compatibility Fix: Replace ?. with standard checks
-          const items = (todoState && todoState.attributes && todoState.attributes.items) 
-                        ? todoState.attributes.items 
-                        : [];
-  
+        const todoState = this.hass.states[kid.todo_list];
+        if (todoState && todoState.attributes && todoState.attributes.items) {
+          const items = todoState.attributes.items;
           for (const item of items) {
             if (item.status === 'completed') {
               await this.hass.callService('todo', 'update_item', {
@@ -1354,6 +1350,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
