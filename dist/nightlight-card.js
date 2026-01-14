@@ -125,7 +125,10 @@ class NightlightDashboard extends LitElement {
       for (const kid of this.config.chores) {
         if (kid.todo_list && this.hass.states[kid.todo_list]) {
           const todoState = this.hass.states[kid.todo_list];
-          const items = todoState?.attributes?.items || [];
+          // Compatibility Fix: Replace ?. with standard checks
+          const items = (todoState && todoState.attributes && todoState.attributes.items) 
+                        ? todoState.attributes.items 
+                        : [];
   
           for (const item of items) {
             if (item.status === 'completed') {
@@ -147,14 +150,13 @@ class NightlightDashboard extends LitElement {
    * Helper: Reads item status from the cached internal list
    */
   _getTodoStatus(entityId, taskLabel) {
-    if (!this._todoItems) return false;
-    
-    // Find the item within the list specifically for this child
-    const item = this._todoItems.find(i => 
-      i.list_id === entityId && 
-      i.summary.trim().toLowerCase() === taskLabel.trim().toLowerCase()
-    );
-    
+    const todoState = this.hass.states[entityId];
+    if (!todoState) return false;
+    // Compatibility Fix: Replace ?. with standard checks
+    const items = (todoState.attributes && todoState.attributes.items) 
+                  ? todoState.attributes.items 
+                  : [];
+    const item = items.find(i => i.summary.trim().toLowerCase() === taskLabel.trim().toLowerCase());
     return item ? item.status === 'completed' : false;
   }
 
@@ -1352,6 +1354,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
