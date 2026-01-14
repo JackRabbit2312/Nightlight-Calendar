@@ -355,40 +355,44 @@ class NightlightDashboard extends LitElement {
           </a>
 
           <div class="nav-items">
+            /* --- LOOP 1: YOUR ORIGINAL BUTTONS --- */
+            ${coreNav.map(nav => html`
+              <button class="nav-btn ${this._activeView === nav.id ? 'active' : ''}" 
+                      @click="${() => {
+                        this._activeView = nav.id;
+                        this._menuOpen = false;
+                        if (this.config.view_controller) {
+                          this.hass.callService('input_select', 'select_option', {
+                            entity_id: this.config.view_controller,
+                            option: "Nightlight" // Core views hide custom sections
+                          });
+                        }
+                      }}">
+                <ha-icon icon="${nav.icon}"></ha-icon>
+                <span>${nav.name}</span>
+              </button>
+            `)}
+
+            /* --- SEPARATOR --- */
+            ${customNav.length > 0 ? html`<hr style="width: 50%; opacity: 0.1; margin: 10px 0;">` : ''}
+
+            /* --- LOOP 2: YOUR CUSTOM SECTIONS (Media, Security, etc.) --- */
             ${customNav.map(nav => html`
               <button class="nav-btn ${this._activeView === nav.name ? 'active' : ''}" 
                       @click="${() => {
-                        const viewName = nav.name; // This is 'Media' or 'Security' from your YAML
-                        
-                        this._activeView = viewName;
+                        this._activeView = nav.name;
                         this._menuOpen = false;
-                      
                         if (this.config.view_controller) {
-                          // Custom views broadcast their name to unhide the section
                           this.hass.callService('input_select', 'select_option', {
                             entity_id: this.config.view_controller,
-                            option: viewName
+                            option: nav.name // Sends "Media" or "Security" to unhide sections
                           });
-                          console.log("Custom Section Active: Sending " + viewName + " to HA");
                         }
                       }}">
-                 <ha-icon icon="${nav.icon}"></ha-icon>
-                 <span>${nav.name}</span>
+                <ha-icon icon="${nav.icon}"></ha-icon>
+                <span>${nav.name}</span>
               </button>
             `)}
-          
-            ${customNav.length > 0 ? html`
-              <div class="custom-nav-wrapper">
-                <hr style="width: 50%; opacity: 0.1; margin: 10px 0;">
-                ${customNav.map(nav => html`
-                  <button class="nav-btn ${this._activeView === nav.name ? 'active' : ''}" 
-                          @click="${() => { this._activeView = nav.name; this._menuOpen = false; }}">
-                     <ha-icon icon="${nav.icon}"></ha-icon>
-                     <span>${nav.name}</span>
-                  </button>
-                `)}
-              </div>
-            ` : ''}
           </div>
         </nav>
 
@@ -447,10 +451,9 @@ class NightlightDashboard extends LitElement {
   }
 
   _renderActiveModule() {
-    // 1. Define your core IDs that should still render "the old way"
     const coreIds = ['calendar', 'meals', 'whiteboard', 'chores'];
 
-    // 2. If it's a core view, use the internal render functions
+    // Only render internal code for your original 4 buttons
     if (coreIds.includes(this._activeView)) {
       switch(this._activeView) {
         case 'meals': return this._renderMealPlanner();
@@ -460,8 +463,8 @@ class NightlightDashboard extends LitElement {
       }
     }
 
-    // 3. For everything else (Media, Security, etc.), return null
-    // This makes the card "empty" so your native Sections can show up next to it.
+    // Return null for "Media", "Security", "Weather", etc.
+    // This allows native HA Sections to occupy the right side of the screen.
     return null;
   }
   
@@ -1315,18 +1318,3 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
