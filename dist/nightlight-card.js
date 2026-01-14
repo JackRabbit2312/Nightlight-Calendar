@@ -327,6 +327,10 @@ class NightlightDashboard extends LitElement {
   render() {
     if (!this.hass) return html``;
 
+    const coreIds = ['calendar', 'meals', 'whiteboard', 'chores'];
+    const isCoreMode = coreIds.includes(this._activeView);
+    const modeClass = isCoreMode ? 'core-mode' : 'section-mode';
+
     // 1. Logic: Header Title
     const headerTitle = (this._activeView === 'calendar')
         ? this._referenceDate.toLocaleString('default', { month: 'long', year: 'numeric' })
@@ -346,7 +350,7 @@ class NightlightDashboard extends LitElement {
     const hasNewNotes = notesState ? (new Date() - new Date(notesState.last_changed)) < (60 * 60 * 1000) : false;
 
     return html`
-      <div class="nightlight-hub ${this.config.theme} ${this._activeView}-active ${this._menuOpen ? 'menu-visible' : ''}">
+      <div class="nightlight-hub ${this.config.theme} ${modeClass} ${this._activeView}-active ${this._menuOpen ? 'menu-visible' : ''}">
         
         <nav class="side-rail ${this._menuOpen ? 'open' : ''}">
           <button class="menu-close-btn" @click="${() => this._menuOpen = false}">✕</button>
@@ -1332,4 +1336,5 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
+
 
