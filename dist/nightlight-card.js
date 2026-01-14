@@ -1,7 +1,7 @@
 /**
  * Nightlight Dashboard (v1.6.8)
  * Features: To-do List Memory, User-Specific Views, Stretched Banners, Refined Announcer
- * Integrated Fixes: Legacy Browser Support, Hybrid Section Controller, Interaction Sizing
+ * Fixes: Legacy WebView Compatibility, Hybrid Section Controller, Touch Interaction Fix
  */
 
 import {
@@ -63,11 +63,11 @@ class NightlightDashboard extends LitElement {
   // --- Data Management & Lifecycle ---
 
   updated(changedProps) {
-    // 1. Unified View Handling: Toggles attributes for CSS and fetches data
+    // 1. Unified Hybrid Mode Handling
     if (changedProps.has('_activeView')) {
       const coreIds = ['calendar', 'meals', 'whiteboard', 'chores'];
       
-      // Control host sizing via attribute
+      // Control host sizing via attribute for interaction fix
       if (coreIds.includes(this._activeView)) {
         this.setAttribute('mode', 'core');
       } else {
@@ -110,9 +110,13 @@ class NightlightDashboard extends LitElement {
             type: "todo/item/list",
             entity_id: kid.todo_list,
           });
-          const taggedItems = (result.items || []).map(item => ({ ...item, list_id: kid.todo_list }));
+          const taggedItems = (result.items || []).map(item => {
+            const newItem = JSON.parse(JSON.stringify(item));
+            newItem.list_id = kid.todo_list;
+            return newItem;
+          });
           allItems.push(...taggedItems);
-        } catch (e) { console.error("Chore fetch failed for", kid.todo_list, e); }
+        } catch (e) { console.error("Chore fetch failed", kid.todo_list, e); }
       }
     }
     this._todoItems = allItems;
@@ -127,7 +131,7 @@ class NightlightDashboard extends LitElement {
       for (const kid of this.config.chores) {
         if (kid.todo_list && this.hass.states[kid.todo_list]) {
           const todoState = this.hass.states[kid.todo_list];
-          // Legacy Fix: Standard null checks replacing ?.
+          // Legacy check for Android WebView
           const items = (todoState && todoState.attributes && todoState.attributes.items) 
                         ? todoState.attributes.items 
                         : [];
@@ -212,19 +216,25 @@ class NightlightDashboard extends LitElement {
     const startStr = start.toISOString().replace(/\.\d+Z$/, "Z");
     const endStr = end.toISOString().replace(/\.\d+Z$/, "Z");
 
-    const promises = this.config.entities.filter(e => e.entity.startsWith('calendar')).map(ent => {
+    const filteredEntities = (this.config.entities || []).filter(e => e.entity.startsWith('calendar'));
+    const promises = filteredEntities.map(ent => {
       return this.hass.callApi('GET', `calendars/${ent.entity}?start=${startStr}&end=${endStr}`)
-        .then(evs => evs.map(e => ({ 
-          ...e, 
-          color: ent.color || '#7b61ff', 
-          origin: ent.entity,
-          friendly_name: (this.hass.states[ent.entity] && this.hass.states[ent.entity].attributes) ? this.hass.states[ent.entity].attributes.friendly_name : ent.entity
-        })))
+        .then(evs => evs.map(e => {
+            const stateObj = this.hass.states[ent.entity];
+            return {
+                ...e,
+                color: ent.color || '#7b61ff',
+                origin: ent.entity,
+                friendly_name: (stateObj && stateObj.attributes) ? stateObj.attributes.friendly_name : ent.entity
+            };
+        }))
         .catch(() => []);
     });
     const results = await Promise.all(promises);
     this._events = results.flat();
   }
+
+  // --- Interaction & Command Logic ---
 
   _navigate(dir) {
     const d = new Date(this._referenceDate);
@@ -266,6 +276,8 @@ class NightlightDashboard extends LitElement {
     } catch (e) { console.error(e); }
   }
 
+  // --- Specialized Utility Logic ---
+
   _isPast(event) {
     const end = new Date(event.end.dateTime || event.end.date);
     return new Date() > end;
@@ -291,12 +303,18 @@ class NightlightDashboard extends LitElement {
       const start = new Date(event.start.dateTime || event.start.date);
       const end = new Date(event.end.dateTime || event.end.date);
       if (start.toDateString() === end.toDateString()) {
-        fragmented.push({...event, displayDate: start.toDateString()});
+        const ev = JSON.parse(JSON.stringify(event));
+        ev.displayDate = start.toDateString();
+        fragmented.push(ev);
       } else {
         let current = new Date(start);
         while (current <= end) {
           if ((!startRange || current >= startRange) && (!endRange || current <= endRange)) {
-            fragmented.push({ ...event, isFragment: true, displayDate: current.toDateString(), isAllDay: true });
+            const ev = JSON.parse(JSON.stringify(event));
+            ev.isFragment = true;
+            ev.displayDate = current.toDateString();
+            ev.isAllDay = true;
+            fragmented.push(ev);
           }
           current.setDate(current.getDate() + 1);
         }
@@ -323,7 +341,7 @@ class NightlightDashboard extends LitElement {
 
     const headerTitle = (this._activeView === 'calendar')
         ? this._referenceDate.toLocaleString('default', { month: 'long', year: 'numeric' })
-        : this.config.title;
+        : (this.config.title || "Family Hub");
 
     const coreNav = [
         { id: 'calendar', name: 'Calendar', icon: 'mdi:calendar-month' },
@@ -495,7 +513,8 @@ class NightlightDashboard extends LitElement {
   }
 
   async _saveMeal(day, value) {
-    const entityId = (this.config.meal_entities) ? this.config.meal_entities[day] : null;
+    const mealEntities = this.config.meal_entities;
+    const entityId = mealEntities ? mealEntities[day] : null;
     if (!entityId) return;
 
     const timestamp = new Date().toISOString();
@@ -542,7 +561,8 @@ class NightlightDashboard extends LitElement {
           ${items.length === 0 
             ? html`<div class="empty-msg">No active notes.</div>` 
             : items.map(item => {
-                const formattedSummary = item.summary.split('--').map((line, index) => {
+                const parts = item.summary.split('--');
+                const formattedSummary = parts.map((line, index) => {
                   return index === 0 ? line : '\n• ' + line.trim();
                 }).join('');
 
@@ -798,16 +818,13 @@ class NightlightDashboard extends LitElement {
 
   static get styles() {
     return css`
-      /* --- Base Variables --- */
+      /* --- Base Variables & Layout --- */
       :host { display: block; width: 100%; transition: width 0.3s ease; --accent: #7b61ff; --bg: var(--primary-background-color); --card: var(--card-background-color); --text: var(--primary-text-color); --secondary-text: var(--secondary-text-color); --border: var(--divider-color); --gold: #ffd700; --ha-header: 56px; }
       
       /* --- Interaction & Sizing Fixes --- */
-      /* When in Section Mode (Media/Security), shrink the card to sidebar width to fix the "glass wall" */
       :host([mode="section"]) { width: 80px !important; position: absolute; z-index: 100; pointer-events: none; }
       :host([mode="section"]) .side-rail { pointer-events: auto; }
       :host([mode="section"]) .main-stage { display: none !important; }
-
-      /* When in Core Mode (Calendar/Chores), dashboard takes full width */
       :host([mode="core"]) { width: 100% !important; position: relative; }
       :host([mode="core"]) .main-stage { display: flex !important; pointer-events: auto; }
 
@@ -815,52 +832,82 @@ class NightlightDashboard extends LitElement {
       .nightlight-hub { display: grid; grid-template-columns: 80px 1fr; height: calc(100vh - var(--ha-header, 56px)); background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
 
       /* --- Sidebar & Navigation --- */
+      .logo-link { color: var(--accent); text-decoration: none; cursor: pointer; display: block; }
+      .logo-area { color: var(--accent); margin-bottom: 20px; width: 30px; }
       .side-rail { background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 15px 0; z-index: 20; }
       .nav-btn { background: none; border: none; padding: 15px 0; color: #bbb; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; font-weight: bold; width: 100%; position: relative; }
       .nav-btn.active { color: var(--accent); border-right: 3px solid var(--accent); background: rgba(123, 97, 255, 0.05); }
       .nav-btn ha-icon { --mdc-icon-size: 22px; }
+      .hamburger-menu { display: none; margin-right: 10px; --mdc-icon-button-size: 40px; }
+      .menu-close-btn { display: none; background: none; border: none; color: var(--text); font-size: 1.5rem; position: absolute; top: 15px; right: 15px; z-index: 1001; }
       
       /* --- Main Header & Stage --- */
       .main-stage { padding: 15px; flex-direction: column; height: 100%; box-sizing: border-box; overflow: hidden; }
-      .top-bar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; flex-shrink: 0; }
+      .top-bar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; flex-shrink: 0; z-index: 10; }
       .top-bar h1 { font-size: 1.8rem; font-weight: 800; margin: 0; letter-spacing: -1px; white-space: nowrap; }
+      .meta-row { display: flex; align-items: center; gap: 10px; margin-top: 5px; }
       .clock { font-size: 1rem; font-weight: 700; color: #888; }
+      .nav-arrows button { background: var(--card); border: 1px solid var(--border); border-radius: 50%; width: 32px; height: 32px; cursor: pointer; color: var(--text); }
       .right-actions { display: flex; align-items: center; gap: 15px; }
-      .view-switcher { background: rgba(0,0,0,0.05); padding: 3px; border-radius: 10px; display: flex; }
+      .view-switcher { background: rgba(0,0,0,0.05); padding: 3px; border-radius: 10px; display: flex; white-space: nowrap; }
       .view-switcher button { border: none; background: transparent; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: 800; color: #666; font-size: 0.65rem; }
       .view-switcher button.active { background: var(--card); color: var(--text); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-      .persona { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 900; cursor: pointer; overflow: hidden; }
-      .persona.inactive { opacity: 0.2 !important; filter: grayscale(1); background: #444 !important; }
+      .persona { width: 32px; height: 32px; border-radius: 50%; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 900; cursor: pointer; overflow: hidden; }
+      .persona.inactive { opacity: 0.2 !important; filter: grayscale(1) !important; background: #444 !important; }
+      .today-btn { background: var(--accent); color: #fff; border: none; padding: 6px 14px; border-radius: 10px; font-weight: 800; cursor: pointer; white-space: nowrap; font-size: 0.75rem; }
 
-      /* --- Calendar Styling --- */
-      .content-area { flex-grow: 1; height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+      /* --- Calendar Views --- */
+      .content-area { flex-grow: 1; height: 0; overflow-y: auto; display: flex; flex-direction: column; position: relative; z-index: 1; }
+      .month-wrapper { height: 100%; display: flex; flex-direction: column; }
+      .labels-row { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; color: #bbb; font-weight: 800; font-size: 0.7rem; padding-bottom: 8px; }
       .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(6, 1fr); gap: 6px; flex-grow: 1; height: 0; }
-      .day-cell { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 8px; cursor: pointer; }
+      .day-cell { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 8px; overflow: hidden; cursor: pointer; }
       .day-cell.today { border-color: var(--accent); border-width: 2px; }
-      .ev-pill { margin-top: 2px; padding: 3px; border-radius: 4px; font-size: 0.6rem; font-weight: 800; white-space: nowrap; overflow: hidden; }
-      .is-past { opacity: 0.3; }
+      .ev-pill { margin-top: 2px; padding: 3px; border-radius: 4px; color: #fff; font-size: 0.6rem; font-weight: 800; white-space: nowrap; overflow: hidden; }
+      .is-past { opacity: 0.3 !important; }
 
-      /* --- Chore Dashboard Styling --- */
-      .chore-grid-locked { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; overflow-y: auto; }
-      .kid-chore-card { background: var(--card); border-radius: 20px; border: 1px solid var(--border); overflow: hidden; }
+      /* --- Chore Dashboard --- */
+      .chore-container { display: flex; flex-direction: column; height: 100%; position: relative; z-index: 5; }
+      .chore-grid-locked { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; overflow-y: auto; padding-bottom: 10px; }
+      .kid-chore-card { background: var(--card); border-radius: 20px; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.04); position: relative; }
       .kid-banner { height: 100px; background-size: 100% 100%; display: flex; align-items: flex-end; padding: 15px; color: #fff; position: relative; }
-      .kid-item { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; cursor: pointer; font-weight: 800; background: rgba(123, 97, 255, 0.03); }
-      .kid-item.done { background: rgba(52, 199, 89, 0.1) !important; opacity: 0.8; }
-      .kid-item.done span { text-decoration: line-through; color: var(--secondary-text); }
+      .period-announcer { text-align: right; font-weight: 800; text-transform: uppercase; color: var(--accent); padding: 4px 12px; background: rgba(123, 97, 255, 0.08); border-radius: 6px; margin-bottom: 8px; font-size: 0.6rem; align-self: flex-end; }
+      .kid-list { padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+      .kid-item { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; cursor: pointer; color: var(--text); font-weight: 800; background: rgba(123, 97, 255, 0.03); transition: all 0.2s ease; }
+      .kid-item.done { background: rgba(52, 199, 89, 0.1) !important; border: 1px solid rgba(52, 199, 89, 0.3); opacity: 0.8; }
+      .kid-item.done span { text-decoration: line-through !important; color: var(--secondary-text); }
+      .chore-lock-msg { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--secondary-text); font-size: 1.2rem; font-weight: 700; }
 
-      /* --- Whiteboard Styling --- */
-      .post-it-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
-      .post-it { background: #fff9c4; color: #000; padding: 20px; min-height: 150px; border-radius: 2px; box-shadow: 3px 3px 10px rgba(0,0,0,0.1); position: relative; font-family: 'Comic Sans MS', cursive, sans-serif; display: flex; align-items: center; justify-content: center; transform: rotate(-1.5deg); }
-      .note-content { font-size: 1.2rem; line-height: 1.3; white-space: pre-wrap; }
+      /* --- Whiteboard --- */
+      .whiteboard-grid-container { height: 100%; display: flex; flex-direction: column; padding: 10px; }
+      .whiteboard-header { display: flex; justify-content: space-between; align-items: center; font-size: 1.6rem; font-weight: 900; margin-bottom: 15px; color: var(--text); }
+      .post-it-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; overflow-y: auto; padding: 10px; flex-grow: 1; }
+      .post-it { background: #fff9c4; color: #000 !important; padding: 20px; min-height: 150px; border-radius: 2px; box-shadow: 3px 3px 10px rgba(0,0,0,0.1); position: relative; font-family: 'Comic Sans MS', cursive, sans-serif; font-weight: 700; display: flex; align-items: center; justify-content: center; transform: rotate(-1.5deg); }
+      .note-content { color: #000 !important; font-size: 1.2rem; line-height: 1.3; white-space: pre-wrap; }
+      .delete-note { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.05); border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; color: #888; }
+      .add-note-inline { background: var(--accent); color: white; border: none; padding: 8px 16px; border-radius: 12px; font-weight: 800; cursor: pointer; }
 
-      /* --- UI Elements --- */
+      /* --- Meal Planner --- */
+      .meal-grid-view { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; height: 100%; overflow-y: auto; padding: 5px; }
+      .meal-card-item { background: var(--card); border-radius: 16px; border: 1px solid var(--border); padding: 15px; display: flex; flex-direction: column; }
+      .meal-day-label { font-size: 1.1rem; font-weight: 900; color: var(--accent); margin-bottom: 8px; }
+      .meal-card-item textarea { border: none; resize: none; font-size: 0.9rem; background: transparent; color: var(--text); outline: none; }
+      
+      /* --- UI Overlays --- */
       .alert-dot { position: absolute; top: 12px; right: 20px; width: 10px; height: 10px; background: #ff5252; border-radius: 50%; border: 2px solid var(--card); }
-      .fab { position: fixed; bottom: 25px; right: 25px; width: 42px; height: 42px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 1.8rem; z-index: 100; cursor: pointer; }
+      .fab { position: fixed; bottom: 25px; right: 25px; width: 42px; height: 42px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 1.8rem; cursor: pointer; box-shadow: 0 5px 15px rgba(123, 97, 255, 0.4); z-index: 100; display: flex; align-items: center; justify-content: center; }
       .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 3000; backdrop-filter: blur(10px); }
-      .modal-body { background: var(--card); width: 90%; max-width: 400px; border-radius: 20px; overflow: hidden; }
+      .modal-body { background: var(--card); width: 90%; max-width: 400px; border-radius: 20px; overflow: hidden; box-shadow: 0 15px 50px rgba(0,0,0,0.3); }
+      .modal-header { padding: 15px; color: #fff; text-align: center; }
+      .modal-content { padding: 15px; font-size: 0.85rem; line-height: 1.3; }
+      .modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 10px 20px; border-top: 1px solid var(--border); }
+      
+      @media (max-width: 768px) { .nightlight-hub { grid-template-columns: 1fr; } .hamburger-menu { display: inline-block; } .side-rail { position: fixed; left: -100px; top: 0; bottom: 0; width: 80px; z-index: 2000; transition: left 0.3s ease; } .side-rail.open { left: 0; } .menu-close-btn { display: block; } }
     `;
   }
 }
+
+// --- CARD EDITOR CLASS (100% RESTORED) ---
 
 class NightlightCardEditor extends LitElement {
   static get properties() { return { hass: {}, _config: {} }; }
@@ -881,16 +928,118 @@ class NightlightCardEditor extends LitElement {
     this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, ...changes } }, bubbles: true, composed: true }));
   }
 
+  _valueChanged(ev) {
+    if (!this._config || !this.hass) return;
+    const target = ev.target;
+    const field = target.configValue || 'title';
+    const value = target.value;
+    this._updateConfig({ [field]: value });
+  }
+
+  _entitiesChanged(ev) {
+    const newEntityList = ev.detail.value;
+    const current = this._config.entities || [];
+    const entities = newEntityList.map(entId => {
+      const existing = current.find(e => e.entity === entId);
+      return existing ? JSON.parse(JSON.stringify(existing)) : { entity: entId, color: '#7b61ff', picture: '' };
+    });
+    this._updateConfig({ entities });
+  }
+  
+  _removeEntity(idx) {
+    const entities = [...(this._config.entities || [])];
+    entities.splice(idx, 1);
+    this._updateConfig({ entities });
+  }
+
+  _entityPropertyChanged(idx, prop, value) {
+    const entities = JSON.parse(JSON.stringify(this._config.entities || []));
+    if (!entities[idx]) return;
+    entities[idx][prop] = value;
+    this._updateConfig({ entities });
+  }
+
+  _moveEntity(idx, direction) {
+    const entities = [...(this._config.entities || [])];
+    const newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= entities.length) return;
+    const temp = entities[idx];
+    entities[idx] = entities[newIdx];
+    entities[newIdx] = temp;
+    this._updateConfig({ entities });
+  }
+
+  _addPeriod() {
+    const periods = [...(this._config.periods || [])];
+    periods.push({ name: "Morning", start: "06:00", end: "09:00" });
+    this._updateConfig({ periods });
+  }
+
+  _removePeriod(idx) {
+    const periods = [...(this._config.periods || [])];
+    periods.splice(idx, 1);
+    this._updateConfig({ periods });
+  }
+
   _periodChanged(idx, field, value) {
     const periods = JSON.parse(JSON.stringify(this._config.periods || []));
     periods[idx][field] = value;
     this._updateConfig({ periods });
   }
   
+  _addNavLink() {
+    const navigation = [...(this._config.navigation || [])];
+    navigation.push({ name: "New Link", icon: "mdi:link", path: "/dashboard/0" });
+    this._updateConfig({ navigation });
+  }
+
+  _removeNavLink(idx) {
+    const navigation = [...(this._config.navigation || [])];
+    navigation.splice(idx, 1);
+    this._updateConfig({ navigation });
+  }
+
   _navPropChanged(idx, prop, value) {
     const navigation = JSON.parse(JSON.stringify(this._config.navigation || []));
     navigation[idx][prop] = value;
     this._updateConfig({ navigation });
+  }
+
+  _addKid() {
+    const chores = [...(this._config.chores || [])];
+    chores.push({ name: "New Child", image: "", todo_list: "", assigned_user: "", items: [] });
+    this._updateConfig({ chores });
+  }
+
+  _removeKid(idx) {
+    const chores = [...(this._config.chores || [])];
+    chores.splice(idx, 1);
+    this._updateConfig({ chores });
+  }
+
+  _kidPropertyChanged(idx, prop, value) {
+    const chores = JSON.parse(JSON.stringify(this._config.chores || []));
+    chores[idx][prop] = value;
+    this._updateConfig({ chores });
+  }
+
+  _addChoreToPeriod(kIdx, periodName) {
+    const chores = JSON.parse(JSON.stringify(this._config.chores || []));
+    if (!chores[kIdx].items) chores[kIdx].items = [];
+    chores[kIdx].items.push({ label: "New Task", period: periodName });
+    this._updateConfig({ chores });
+  }
+
+  _removeChore(kIdx, iIdx) {
+    const chores = JSON.parse(JSON.stringify(this._config.chores || []));
+    chores[kIdx].items.splice(iIdx, 1);
+    this._updateConfig({ chores });
+  }
+
+  _choreItemChanged(kIdx, iIdx, prop, value) {
+    const chores = JSON.parse(JSON.stringify(this._config.chores || []));
+    chores[kIdx].items[iIdx][prop] = value;
+    this._updateConfig({ chores });
   }
 
   render() {
@@ -903,17 +1052,172 @@ class NightlightCardEditor extends LitElement {
           <div class="panel-content">
             <ha-textfield label="Title" .value="${this._config.title}" @input="${e => this._updateConfig({title: e.target.value})}"></ha-textfield>
             <ha-textfield label="Logo URL Link" .value="${this._config.logo_url}" @input="${e => this._updateConfig({logo_url: e.target.value})}"></ha-textfield>
+            <ha-select label="Theme" .value="${this._config.theme}" .configValue="${'theme'}" @selected="${this._valueChanged}">
+              <mwc-list-item value="light">Skylight Light</mwc-list-item>
+              <mwc-list-item value="dark">Nightlight Dark</mwc-list-item>
+            </ha-select>
+          </div>
+        </ha-expansion-panel>
+
+        <ha-expansion-panel header="Chore Periods" outlined>
+          <div class="panel-content">
+            <div class="period-header">
+              <div>Start</div><div>End</div><div>Name</div><div></div>
+            </div>
+            ${periods.map((p, idx) => html`
+              <div class="period-row">
+                <ha-textfield placeholder="00:00" .value="${p.start}" @input="${e => this._periodChanged(idx, 'start', e.target.value)}"></ha-textfield>
+                <ha-textfield placeholder="00:00" .value="${p.end}" @input="${e => this._periodChanged(idx, 'end', e.target.value)}"></ha-textfield>
+                <ha-textfield placeholder="Name" .value="${p.name}" @input="${e => this._periodChanged(idx, 'name', e.target.value)}"></ha-textfield>
+                <ha-icon-button @click="${() => this._removePeriod(idx)}">
+                  <ha-icon icon="mdi:close"></ha-icon>
+                </ha-icon-button>
+              </div>`)}
+            <mwc-button class="mush-btn" @click="${this._addPeriod}">+ ADD TIME PERIOD</mwc-button>
+          </div>
+        </ha-expansion-panel>
+
+        <ha-expansion-panel header="Family Profiles" outlined expanded>
+          <div class="panel-content">
+            ${(this._config.chores || []).map((kid, kIdx) => html`
+              <div class="kid-box">
+                <div class="kid-header">
+                  <ha-textfield label="Child Name" .value="${kid.name}" @input="${e => this._kidPropertyChanged(kIdx, 'name', e.target.value)}"></ha-textfield>
+                  <ha-icon-button @click="${() => this._removeKid(kIdx)}">
+                    <ha-icon icon="mdi:account-remove"></ha-icon>
+                  </ha-icon-button>
+                </div>
+
+                <div class="mapping-grid">
+                  <ha-entity-picker 
+                    label="Linked To-do List"
+                    .hass="${this.hass}"
+                    .value="${kid.todo_list}"
+                    .includeDomains="${['todo']}"
+                    @value-changed="${e => this._kidPropertyChanged(kIdx, 'todo_list', e.detail.value)}">
+                  </ha-entity-picker>
+
+                  <ha-textfield 
+                    label="Assigned HA User" 
+                    .value="${kid.assigned_user || ''}"
+                    @input="${e => this._kidPropertyChanged(kIdx, 'assigned_user', e.target.value)}">
+                  </ha-textfield>
+                </div>
+
+                <ha-textfield label="Banner Image URL" .value="${kid.image || ''}" @input="${e => this._kidPropertyChanged(kIdx, 'image', e.target.value)}"></ha-textfield>
+
+                ${periods.map(p => html`
+                  <div class="period-group">
+                    <div class="period-group-title">
+                      <span>${p.name} Tasks</span>
+                      <ha-icon-button @click="${() => this._addChoreToPeriod(kIdx, p.name)}">
+                        <ha-icon icon="mdi:plus-circle"></ha-icon>
+                      </ha-icon-button>
+                    </div>
+                    ${(kid.items || []).filter(i => i.period === p.name).map((item) => {
+                      const originalIdx = kid.items.indexOf(item);
+                      return html`
+                        <div class="chore-row">
+                          <ha-textfield label="Task Label" .value="${item.label}" @input="${e => this._choreItemChanged(kIdx, originalIdx, 'label', e.target.value)}"></ha-textfield>
+                          <ha-icon-button @click="${() => this._removeChore(kIdx, originalIdx)}">
+                            <ha-icon icon="mdi:close"></ha-icon>
+                          </ha-icon-button>
+                        </div>`;
+                    })}
+                  </div>`)}
+              </div>`)}
+            <mwc-button raised class="mush-btn" @click="${this._addKid}">+ ADD CHILD PROFILE</mwc-button>
           </div>
         </ha-expansion-panel>
 
         <ha-expansion-panel header="Sidebar Navigation" outlined>
           <div class="panel-content">
             ${(this._config.navigation || []).map((nav, idx) => html`
-              <div class="kid-box">
-                <ha-textfield label="Button Name" .value="${nav.name}" @input="${e => this._navPropChanged(idx, 'name', e.target.value)}"></ha-textfield>
-                <ha-textfield label="Icon (mdi:icon)" .value="${nav.icon}" @input="${e => this._navPropChanged(idx, 'icon', e.target.value)}"></ha-textfield>
+              <div class="kid-box" style="margin-bottom: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                  <ha-textfield label="Button Name" .value="${nav.name}" style="flex-grow: 1;"
+                    @input="${e => this._navPropChanged(idx, 'name', e.target.value)}"></ha-textfield>
+                  <ha-icon-button @click="${() => this._removeNavLink(idx)}">
+                    <ha-icon icon="mdi:delete"></ha-icon>
+                  </ha-icon-button>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+                  <ha-textfield label="Icon (mdi:icon)" .value="${nav.icon}" 
+                    @input="${e => this._navPropChanged(idx, 'icon', e.target.value)}"></ha-textfield>
+                  <ha-textfield label="URL Path" .value="${nav.path}" 
+                    @input="${e => this._navPropChanged(idx, 'path', e.target.value)}"></ha-textfield>
+                </div>
               </div>
             `)}
+            <mwc-button raised class="mush-btn" @click="${this._addNavLink}">+ ADD NAV LINK</mwc-button>
+          </div>
+        </ha-expansion-panel>
+
+        <ha-expansion-panel header="Persona Styling" outlined>
+          <div class="panel-content">
+            <ha-entities-picker 
+              .hass="${this.hass}" 
+              .includeDomains="${['calendar']}" 
+              .value="${this._config.entities ? this._config.entities.map(e => e.entity) : []}" 
+              @value-changed="${this._entitiesChanged}">
+            </ha-entities-picker>
+
+            ${(this._config.entities || []).map((ent, idx) => html`
+              <div class="persona-row" style="border: 1px solid var(--divider-color); padding: 10px; margin-top: 10px; border-radius: 8px;">
+                <div class="persona-header" style="display: flex; justify-content: space-between; align-items: center;">
+                  <strong style="font-size: 0.8rem;">${ent.entity}</strong>
+                  <div style="display: flex;">
+                    <ha-icon-button @click="${() => this._moveEntity(idx, -1)}" ?disabled="${idx === 0}">
+                      <ha-icon icon="mdi:arrow-up"></ha-icon>
+                    </ha-icon-button>
+                    <ha-icon-button @click="${() => this._moveEntity(idx, 1)}" ?disabled="${idx === (this._config.entities.length - 1)}">
+                      <ha-icon icon="mdi:arrow-down"></ha-icon>
+                    </ha-icon-button>
+                    <ha-icon-button @click="${() => this._removeEntity(idx)}" style="color: #db4437;">
+                      <ha-icon icon="mdi:delete"></ha-icon>
+                    </ha-icon-button>
+                  </div>
+                </div>
+
+                <div class="controls" style="display: grid; grid-template-columns: 40px 1fr; gap: 10px; align-items: center; margin-top: 8px;">
+                  <input type="color" .value="${ent.color}" 
+                    @input="${e => this._entityPropertyChanged(idx, 'color', e.target.value)}"
+                    style="width: 100%; height: 35px; cursor: pointer;">
+                  <ha-textfield label="Picture URL" .value="${ent.picture || ''}" 
+                    @input="${e => this._entityPropertyChanged(idx, 'picture', e.target.value)}"></ha-textfield>
+                </div>
+              </div>`)}
+          </div>
+        </ha-expansion-panel>
+
+        <ha-expansion-panel header="Meal Plan Entities" outlined>
+          <div class="panel-content">
+            ${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => html`
+              <ha-entity-picker 
+                label="${day} Dinner Entity"
+                .hass="${this.hass}"
+                .value="${(this._config.meal_entities || {})[day]}"
+                .includeDomains="${['input_text']}"
+                @value-changed="${e => {
+                  const meal_entities = { ...(this._config.meal_entities || {}) };
+                  meal_entities[day] = e.detail.value;
+                  this._updateConfig({ meal_entities });
+                }}">
+              </ha-entity-picker>
+            `)}
+          </div>
+        </ha-expansion-panel>
+
+        <ha-expansion-panel header="Notes Configuration" outlined>
+          <div class="panel-content">
+            <ha-entity-picker 
+              label="Notes To-do List"
+              .hass="${this.hass}"
+              .value="${this._config.notes_entity}"
+              .includeDomains="${['todo']}"
+              @value-changed="${e => this._updateConfig({ notes_entity: e.detail.value })}">
+            </ha-entity-picker>
           </div>
         </ha-expansion-panel>
       </div>`;
@@ -922,8 +1226,15 @@ class NightlightCardEditor extends LitElement {
   static get styles() {
     return css`
       .editor-shell { display: flex; flex-direction: column; gap: 12px; padding: 10px; color: var(--primary-text-color); }
+      ha-expansion-panel { background: var(--secondary-background-color); border-radius: 12px; margin-bottom: 10px; }
       .panel-content { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
-      ha-textfield { display: block; width: 100%; margin-top: 8px; }
+      ha-textfield, ha-select, ha-entity-picker { display: block; width: 100%; margin-top: 8px; }
+      ha-icon-button { display: flex; align-items: center; justify-content: center; }
+      .period-row { display: grid; grid-template-columns: 80px 80px 1fr 40px; gap: 8px; align-items: center; }
+      .kid-box { padding: 15px; border: 1px solid var(--divider-color); border-radius: 12px; margin-bottom: 10px; }
+      .mapping-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .chore-row { display: grid; grid-template-columns: 1fr 40px; align-items: center; gap: 8px; }
+      .mush-btn { width: 100%; margin-top: 10px; }
     `;
   }
 }
