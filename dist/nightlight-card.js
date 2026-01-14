@@ -62,25 +62,28 @@ class NightlightDashboard extends LitElement {
   // --- Data Management & Lifecycle ---
 
   updated(changedProps) {
+    if (changedProps.has('_activeView')) {
+      const coreIds = ['calendar', 'meals', 'whiteboard', 'chores'];
+      // Sync active view state to the host element for CSS selectors
+      if (coreIds.includes(this._activeView)) {
+        this.classList.remove('section-mode');
+        this.classList.add('core-mode');
+      } else {
+        this.classList.add('section-mode');
+        this.classList.remove('core-mode');
+      }
+      this.requestUpdate();
+    }
+    
     if (changedProps.has('hass')) {
       this._checkDailyReset();
-      
-      // Auto-refresh whiteboard OR chores if their entities change
       const oldHass = changedProps.get('hass');
       if (oldHass) {
         if (this._activeView === 'whiteboard' && this.hass.states[this.config.notes_entity] !== oldHass.states[this.config.notes_entity]) {
           this._fetchNotes(this.config.notes_entity);
         }
-        // Trigger chore refresh if any kid's to-do list updates
-        if (this._activeView === 'chores') {
-          this._fetchChoreData();
-        }
+        if (this._activeView === 'chores') { this._fetchChoreData(); }
       }
-    }
-
-    if (changedProps.has('hass') || changedProps.has('_activeView') || 
-        changedProps.has('_calendarMode') || changedProps.has('_referenceDate')) {
-      this._refreshData();
     }
 
     if (changedProps.has('_activeView')) {
@@ -363,17 +366,17 @@ class NightlightDashboard extends LitElement {
                         if (this.config.view_controller) {
                           this.hass.callService('input_select', 'select_option', {
                             entity_id: this.config.view_controller,
-                            option: "Nightlight" // Core views hide custom sections
+                            option: "Nightlight"
                           });
                         }
                       }}">
-                <ha-icon icon="${nav.icon}"></ha-icon>
-                <span>${nav.name}</span>
+                 <ha-icon icon="${nav.icon}"></ha-icon>
+                 <span>${nav.name}</span>
               </button>
             `)}
-
+          
             ${customNav.length > 0 ? html`<hr style="width: 50%; opacity: 0.1; margin: 10px 0;">` : ''}
-
+          
             ${customNav.map(nav => html`
               <button class="nav-btn ${this._activeView === nav.name ? 'active' : ''}" 
                       @click="${() => {
@@ -382,12 +385,12 @@ class NightlightDashboard extends LitElement {
                         if (this.config.view_controller) {
                           this.hass.callService('input_select', 'select_option', {
                             entity_id: this.config.view_controller,
-                            option: nav.name // Sends "Media" or "Security" to unhide sections
+                            option: nav.name
                           });
                         }
                       }}">
-                <ha-icon icon="${nav.icon}"></ha-icon>
-                <span>${nav.name}</span>
+                 <ha-icon icon="${nav.icon}"></ha-icon>
+                 <span>${nav.name}</span>
               </button>
             `)}
           </div>
@@ -831,7 +834,10 @@ class NightlightDashboard extends LitElement {
 static get styles() {
     return css`
       /* --- Base Variables & Theme - Common --- */
-      :host { --accent: #7b61ff; --bg: var(--primary-background-color); --card: var(--card-background-color); --text: var(--primary-text-color); --secondary-text: var(--secondary-text-color); --border: var(--divider-color); --gold: #ffd700; --ha-header: 56px; }
+      :host { width: 100%; display: block; transition: width 0.3s ease; --accent: #7b61ff; --bg: var(--primary-background-color); --card: var(--card-background-color); --text: var(--primary-text-color); --secondary-text: var(--secondary-text-color); --border: var(--divider-color); --gold: #ffd700; --ha-header: 56px; }
+      :host(.section-mode) { width: 80px !important; position: absolute; z-index: 100; pointer-events: none; }
+      :host(.section-mode) .side-rail { pointer-events: auto; } /* Keep sidebar buttons clickable */
+      :host(.section-mode) .main-stage { display: none !important; }
       .nightlight-hub.dark { --bg: #121212; --card: #1e1e1e; --text: #efefef; --border: #333; }
       .nightlight-hub { display: grid; grid-template-columns: 80px 1fr; height: calc(100vh - var(--ha-header, 56px)); background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
       
@@ -1326,3 +1332,4 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
+
