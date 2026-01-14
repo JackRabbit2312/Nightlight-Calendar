@@ -73,6 +73,9 @@ class NightlightDashboard extends LitElement {
         this.classList.remove('core-mode');
       }
       this.requestUpdate();
+      // Fetch specific data if the new view needs it
+      if (this._activeView === 'whiteboard') this._fetchNotes(this.config.notes_entity);
+      if (this._activeView === 'chores') this._fetchChoreData();
     }
     
     if (changedProps.has('hass')) {
@@ -845,6 +848,15 @@ static get styles() {
       .nightlight-hub.dark { --bg: #121212; --card: #1e1e1e; --text: #efefef; --border: #333; }
       .nightlight-hub { display: grid; grid-template-columns: 80px 1fr; height: calc(100vh - var(--ha-header, 56px)); background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
       
+      /* When in Core Mode (Calendar, Chores, etc.), ensure full visibility */
+      .nightlight-hub.core-mode { width: 100%; display: grid; grid-template-columns: 80px 1fr; }
+      .nightlight-hub.core-mode .main-stage { display: flex !important; width: 100%; pointer-events: auto; }
+      
+      /* When in Section Mode, shrink the card so it doesn't block other dashboard sections */
+      .nightlight-hub.section-mode { width: 80px !important; pointer-events: none; }
+      .nightlight-hub.section-mode .side-rail { pointer-events: auto; } /* Keep sidebar clickable */
+      .nightlight-hub.section-mode .main-stage { display: none !important; }
+      
       /* --- Interaction & Sizing Fixes --- */
       /* 1. If a core view is active, the card takes full width */
       .nightlight-hub.calendar-active, .nightlight-hub.meals-active, 
@@ -1336,5 +1348,6 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
+
 
 
