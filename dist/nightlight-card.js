@@ -64,16 +64,14 @@ class NightlightDashboard extends LitElement {
   updated(changedProps) {
     if (changedProps.has('_activeView')) {
       const coreIds = ['calendar', 'meals', 'whiteboard', 'chores'];
-      // Sync active view state to the host element for CSS selectors
+      // Sync classes to the outer element for layout control
       if (coreIds.includes(this._activeView)) {
-        this.classList.remove('section-mode');
-        this.classList.add('core-mode');
+        this.setAttribute('mode', 'core');
       } else {
-        this.classList.add('section-mode');
-        this.classList.remove('core-mode');
+        this.setAttribute('mode', 'section');
       }
-      this.requestUpdate();
-      // Fetch specific data if the new view needs it
+      
+      // Data fetching
       if (this._activeView === 'whiteboard') this._fetchNotes(this.config.notes_entity);
       if (this._activeView === 'chores') this._fetchChoreData();
     }
@@ -81,13 +79,11 @@ class NightlightDashboard extends LitElement {
     if (changedProps.has('hass')) {
       this._checkDailyReset();
       const oldHass = changedProps.get('hass');
-      if (oldHass) {
-        if (this._activeView === 'whiteboard' && this.hass.states[this.config.notes_entity] !== oldHass.states[this.config.notes_entity]) {
-          this._fetchNotes(this.config.notes_entity);
-        }
-        if (this._activeView === 'chores') { this._fetchChoreData(); }
+      if (oldHass && this._activeView === 'chores') { 
+        this._fetchChoreData(); 
       }
     }
+  }
 
     if (changedProps.has('_activeView')) {
       this.requestUpdate();
@@ -840,11 +836,19 @@ class NightlightDashboard extends LitElement {
 
 static get styles() {
     return css`
-      /* --- Base Variables & Theme - Common --- */
-      :host { width: 100%; display: block; transition: width 0.3s ease; --accent: #7b61ff; --bg: var(--primary-background-color); --card: var(--card-background-color); --text: var(--primary-text-color); --secondary-text: var(--secondary-text-color); --border: var(--divider-color); --gold: #ffd700; --ha-header: 56px; }
-      :host(.section-mode) { width: 80px !important; position: absolute; z-index: 100; pointer-events: none; }
-      :host(.section-mode) .side-rail { pointer-events: auto; } /* Keep sidebar buttons clickable */
-      :host(.section-mode) .main-stage { display: none !important; }
+      /* --- Layout & Visibility Fixes --- */
+      :host { display: block; width: 100%; transition: width 0.3s ease; }
+      
+      /* CORE MODE: Dashboard takes full width and shows the stage */
+      :host([mode="core"]) { width: 100% !important; position: relative; }
+      :host([mode="core"]) .main-stage { display: flex !important; pointer-events: auto; opacity: 1; }
+      
+      /* SECTION MODE: Dashboard shrinks to sidebar and hides the stage */
+      :host([mode="section"]) { width: 80px !important; position: absolute; z-index: 100; pointer-events: none; }
+      :host([mode="section"]) .side-rail { pointer-events: auto; }
+      :host([mode="section"]) .main-stage { display: none !important; }
+
+      /* Base Hub Layout */
       .nightlight-hub.dark { --bg: #121212; --card: #1e1e1e; --text: #efefef; --border: #333; }
       .nightlight-hub { display: grid; grid-template-columns: 80px 1fr; height: calc(100vh - var(--ha-header, 56px)); background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
       
@@ -1348,6 +1352,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
