@@ -343,7 +343,7 @@ class NightlightDashboard extends LitElement {
     const hasNewNotes = notesState ? (new Date() - new Date(notesState.last_changed)) < (60 * 60 * 1000) : false;
 
     return html`
-      <div class="nightlight-hub ${this.config.theme} ${this._menuOpen ? 'menu-visible' : ''}">
+      <div class="nightlight-hub ${this.config.theme} ${this._activeView}-active ${this._menuOpen ? 'menu-visible' : ''}">
         
         <nav class="side-rail ${this._menuOpen ? 'open' : ''}">
           <button class="menu-close-btn" @click="${() => this._menuOpen = false}">✕</button>
@@ -834,6 +834,17 @@ static get styles() {
       :host { --accent: #7b61ff; --bg: var(--primary-background-color); --card: var(--card-background-color); --text: var(--primary-text-color); --secondary-text: var(--secondary-text-color); --border: var(--divider-color); --gold: #ffd700; --ha-header: 56px; }
       .nightlight-hub.dark { --bg: #121212; --card: #1e1e1e; --text: #efefef; --border: #333; }
       .nightlight-hub { display: grid; grid-template-columns: 80px 1fr; height: calc(100vh - var(--ha-header, 56px)); background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
+      
+      /* --- Interaction & Sizing Fixes --- */
+      /* 1. If a core view is active, the card takes full width */
+      .nightlight-hub.calendar-active, .nightlight-hub.meals-active, 
+      .nightlight-hub.whiteboard-active, .nightlight-hub.chores-active { width: 100%; pointer-events: auto; }
+      /* 2. If a CUSTOM section is active, shrink the card to just the sidebar (80px) */
+      :host(:not(.calendar-active):not(.meals-active):not(.whiteboard-active):not(.chores-active)) { width: 80px !important; position: absolute; z-index: 100; }
+
+      /* 3. Ensure the main stage is invisible and non-interactive during custom sections */
+      .nightlight-hub:not(.calendar-active):not(.meals-active):not(.whiteboard-active):not(.chores-active) .main-stage { display: none; pointer-events: none; }
+
 
       /* --- Sidebar & Navigation - Mobile Ready --- */
       .logo-link { color: var(--accent); text-decoration: none; cursor: pointer; display: block; }
