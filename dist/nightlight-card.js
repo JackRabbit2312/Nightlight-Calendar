@@ -713,6 +713,7 @@ class NightlightDashboard extends LitElement {
 
   /**
    * Central Memory & User-Specific Dashboard
+   * Updated: Admin users see all, regular users see assigned only
    */
   _renderChoreDashboard() {
     if (!this.config.chores || !this.config.periods) return html`<div>No chores configured.</div>`;
@@ -720,17 +721,21 @@ class NightlightDashboard extends LitElement {
     const now = new Date();
     const currentTime = now.getHours() * 60 + now.getMinutes();
     const currentUser = this.hass.user.name;
+    const isAdmin = this.hass.user.is_admin; // Check for Admin status
 
     const activePeriod = this.config.periods.find(p => {
       const [startH, startM] = p.start.split(':').map(Number);
       const [endH, endM] = p.end.split(':').map(Number);
-      return currentTime >= (startH * 60 + startM) && currentTime <= (endH * 60 + endM);
+      const startTotal = startH * 60 + startM;
+      const endTotal = endH * 60 + endM;
+      return currentTime >= startTotal && currentTime <= endTotal;
     });
 
     if (!activePeriod) return html`<div class="chore-lock-msg">No active chore period right now.</div>`;
 
+    // Updated Filter Logic: Show if user is Admin OR if assignment matches
     const visibleKids = this.config.chores.filter(kid => 
-      !kid.assigned_user || kid.assigned_user === currentUser
+      isAdmin || !kid.assigned_user || kid.assigned_user === currentUser
     );
 
     return html`
@@ -1299,6 +1304,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
