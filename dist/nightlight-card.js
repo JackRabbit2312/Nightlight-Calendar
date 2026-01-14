@@ -355,7 +355,6 @@ class NightlightDashboard extends LitElement {
           </a>
 
           <div class="nav-items">
-            /* --- LOOP 1: YOUR ORIGINAL BUTTONS --- */
             ${coreNav.map(nav => html`
               <button class="nav-btn ${this._activeView === nav.id ? 'active' : ''}" 
                       @click="${() => {
@@ -373,10 +372,8 @@ class NightlightDashboard extends LitElement {
               </button>
             `)}
 
-            /* --- SEPARATOR --- */
             ${customNav.length > 0 ? html`<hr style="width: 50%; opacity: 0.1; margin: 10px 0;">` : ''}
 
-            /* --- LOOP 2: YOUR CUSTOM SECTIONS (Media, Security, etc.) --- */
             ${customNav.map(nav => html`
               <button class="nav-btn ${this._activeView === nav.name ? 'active' : ''}" 
                       @click="${() => {
