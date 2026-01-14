@@ -548,16 +548,23 @@ class NightlightDashboard extends LitElement {
         <div class="post-it-grid">
           ${items.length === 0 
             ? html`<div class="empty-msg">No active notes.</div>` 
-            : items.map(item => html`
-              <div class="post-it">
-                <button class="delete-note" @click="${() => this._deleteNote(entityId, item.uid || item.summary)}">✕</button>
-                <div class="note-content">${item.summary}</div>
-              </div>
-            `)
+            : items.map(item => {
+                // LOGIC: Process text to turn "--" into new lines with bullets
+                const formattedSummary = item.summary.split('--').map((line, index) => {
+                  return index === 0 ? line : `\n• ${line.trim()}`;
+                }).join('');
+
+                return html`
+                  <div class="post-it">
+                    <button class="delete-note" @click="${() => this._deleteNote(entityId, item.uid || item.summary)}">✕</button>
+                    <div class="note-content">${formattedSummary}</div>
+                  </div>
+                `;
+              })
           }
         </div>
       </div>`;
-  }
+  }  
   
   async _showAddNotePrompt(entityId) {
     const note = prompt("Enter your note:");
@@ -910,7 +917,7 @@ static get styles() {
       .whiteboard-header { display: flex; justify-content: space-between; align-items: center; font-size: 1.6rem; font-weight: 900; margin-bottom: 15px; color: var(--text); flex-shrink: 0; }
       .post-it-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); grid-auto-rows: 200px; gap: 20px; overflow-y: auto; padding: 10px; flex-grow: 1; }
       .post-it { background: #fff9c4; color: #000 !important; padding: 20px; min-height: 150px; border-radius: 2px; box-shadow: 3px 3px 10px rgba(0,0,0,0.1); position: relative; font-family: 'Comic Sans MS', cursive, sans-serif; font-weight: 700; display: flex; align-items: center; justify-content: center; text-align: center; transform: rotate(-1.5deg); }
-      .note-content { color: #000 !important; font-size: 1.2rem; line-height: 1.3; white-space: pre-wrap; text-align: center;}
+      .note-content { color: #000 !important; font-size: 1.2rem; line-height: 1.3; white-space: pre-wrap; text-align: left;}
       .post-it:nth-child(even) { transform: rotate(1.2deg); background: #e1f5fe; }
       .post-it:nth-child(3n) { transform: rotate(-0.8deg); background: #f8bbd0; }
       .post-it:hover { transform: rotate(0deg) scale(1.02); z-index: 10; }
@@ -1292,6 +1299,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
