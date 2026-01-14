@@ -373,10 +373,10 @@ class NightlightDashboard extends LitElement {
                       
                           // 3. Logic to determine the exact string for the input_select
                           if (coreIds.includes(nav.id)) {
-                            targetOption = "Nightlight"; 
+                            targetOption = nav.name;  
                           } else {
                             // For Media/Security, we use the 'name' field from your YAML
-                            targetOption = nav.name; 
+                            targetOption = "Nightlight";
                           }
                       
                           // 4. Perform the broadcast
@@ -386,7 +386,7 @@ class NightlightDashboard extends LitElement {
                           });
                           
                           // Debugging hint: If this still fails, uncomment the line below to see what is being sent
-                          // console.log("Sending to HA:", targetOption);
+                          console.log("Sending to HA:", targetOption);
                         }
                       }}">
                  <ha-icon icon="${nav.icon}"></ha-icon>
@@ -1332,6 +1332,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
