@@ -359,7 +359,7 @@ class NightlightDashboard extends LitElement {
               <button class="nav-btn ${this._activeView === nav.id ? 'active' : ''}" 
                       @click="${() => {
                         const coreIds = ['calendar', 'meals', 'whiteboard', 'chores'];
-                        const currentId = nav.id || nav.name;
+                        const currentViewId = nav.id || nav.name;
                         
                         // 1. Update local state for sidebar highlighting
                         this._activeView = currentViewId;
@@ -1327,6 +1327,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
