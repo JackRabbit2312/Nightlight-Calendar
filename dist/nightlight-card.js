@@ -362,14 +362,14 @@ class NightlightDashboard extends LitElement {
                         const currentId = nav.id || nav.name;
                         
                         // 1. Update local state for sidebar highlighting
-                        this._activeView = currentId;
+                        this._activeView = currentViewId;
                         this._menuOpen = false;
                       
                         if (this.config.view_controller) {
                           let targetOption = "";
                       
                           // 2. Map the ID to the exact text in your input_select options
-                          if (coreIds.includes(currentId)) {
+                          if (coreIds.includes(nav.id)) {
                             targetOption = "Nightlight"; // Use "Nightlight" instead of "None"
                           } else {
                             targetOption = nav.name; // Use "Media", "Security", etc.
@@ -380,6 +380,8 @@ class NightlightDashboard extends LitElement {
                             entity_id: this.config.view_controller,
                             option: targetOption
                           });
+                          // Debugging hint: If this still fails, uncomment the line below to see what is being sent
+                          // console.log("Sending to HA:", targetOption);
                         }
                       }}">
                  <ha-icon icon="${nav.icon}"></ha-icon>
@@ -1325,6 +1327,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
