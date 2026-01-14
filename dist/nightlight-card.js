@@ -364,31 +364,19 @@ class NightlightDashboard extends LitElement {
                  ${nav.id === 'whiteboard' && hasNewNotes ? html`<div class="alert-dot"></div>` : ''}
               </button>
             `)}
-
-            ${customNav.length > 0 ? html`<hr style="width: 50%; opacity: 0.1; margin: 10px 0;">` : ''}
-
-            ${customNav.map(nav => html`
-              <button class="nav-btn" 
-                      @click="${() => {
-                        this.hass.callService('browser_mod', 'popup', {
-                          title: nav.name,
-                          size: 'fullscreen', // Best for tablets to mimic an "embedded" look
-                          content: {
-                            type: 'custom:layout-card',
-                            cards: [
-                              {
-                                type: 'iframe', // Embedding via browser_mod often bypasses the session isolation
-                                url: nav.path,
-                                aspect_ratio: '16:9'
-                              }
-                            ]
-                          }
-                        });
-                      }}">
-                 <ha-icon icon="${nav.icon}"></ha-icon>
-                 <span>${nav.name}</span>
-              </button>
-            `)}
+          
+            ${customNav.length > 0 ? html`
+              <div class="custom-nav-wrapper">
+                <hr style="width: 50%; opacity: 0.1; margin: 10px 0;">
+                ${customNav.map(nav => html`
+                  <button class="nav-btn ${this._activeView === nav.name ? 'active' : ''}" 
+                          @click="${() => { this._activeView = nav.name; this._menuOpen = false; }}">
+                     <ha-icon icon="${nav.icon}"></ha-icon>
+                     <span>${nav.name}</span>
+                  </button>
+                `)}
+              </div>
+            ` : ''}
           </div>
         </nav>
 
@@ -449,17 +437,15 @@ class NightlightDashboard extends LitElement {
   _renderActiveModule() {
     const customMatch = (this.config.navigation || []).find(n => n.name === this._activeView);
   
+    // If a custom sidebar button is active, show it in an iframe
     if (customMatch) {
       return html`
-        <div class="unsupported-frame-msg">
-          <h2>Open ${customMatch.name} Dashboard</h2>
-          <p>Embedded views are restricted by the Android/iOS app security policies.</p>
-          <button class="today-btn" @click="${() => window.location.href = customMatch.path}">
-            Go to ${customMatch.name}
-          </button>
-        </div>`;
+        <iframe src="${customMatch.path}${customMatch.path.includes('?') ? '&' : '?'}kiosk" 
+                style="width: 100%; height: 100%; border: none; border-radius: 20px; background: var(--card);">
+        </iframe>`;
     }
   
+    // Fallback to standard views
     switch(this._activeView) {
       case 'meals': return this._renderMealPlanner();
       case 'whiteboard': return this._renderWhiteboard();
@@ -835,7 +821,7 @@ static get styles() {
       .nav-btn ha-icon { --mdc-icon-size: 22px; }
       .hamburger-menu { display: none; margin-right: 10px; --mdc-icon-button-size: 40px; }
       .menu-close-btn { display: none; background: none; border: none; color: var(--text); font-size: 1.5rem; position: absolute; top: 15px; right: 15px; z-index: 1001; }
-      @media (max-width: 768px) { .nightlight-hub { grid-template-columns: 1fr; } .hamburger-menu { display: inline-block; } .side-rail { position: fixed; left: -100px; top: 0; bottom: 0; width: 80px; z-index: 2000; transition: left 0.3s ease; box-shadow: 5px 0 15px rgba(0,0,0,0.2); } .side-rail.open { left: 0; } .menu-close-btn { display: block; } .right-actions { overflow-x: auto; max-width: 100%; padding-bottom: 5px; display: flex; align-items: center; gap: 10px; } .view-switcher { flex-shrink: 0; } .top-bar h1 { font-size: 1.4rem; } .main-stage { padding: 8px !important; } }
+      @media (max-width: 768px) { .nightlight-hub { grid-template-columns: 1fr; } .hamburger-menu { display: inline-block; } .side-rail { position: fixed; left: -100px; top: 0; bottom: 0; width: 80px; z-index: 2000; transition: left 0.3s ease; box-shadow: 5px 0 15px rgba(0,0,0,0.2); } .side-rail.open { left: 0; } .menu-close-btn { display: block; } .right-actions { overflow-x: auto; max-width: 100%; padding-bottom: 5px; display: flex; align-items: center; gap: 10px; } .view-switcher { flex-shrink: 0; } .top-bar h1 { font-size: 1.4rem; } .main-stage { padding: 8px !important; }  .custom-nav-wrapper { display: none !important; } }
       .nav-link-wrap { text-decoration: none; width: 100%; display: block; }
       .custom-link { color: #888; }
       .custom-link:hover { background: rgba(123, 97, 255, 0.05); color: var(--accent); }
@@ -1306,6 +1292,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
