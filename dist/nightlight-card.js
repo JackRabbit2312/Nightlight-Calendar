@@ -355,38 +355,21 @@ class NightlightDashboard extends LitElement {
           </a>
 
           <div class="nav-items">
-            ${coreNav.map(nav => html`
-              <button class="nav-btn ${this._activeView === nav.id ? 'active' : ''}" 
+            ${customNav.map(nav => html`
+              <button class="nav-btn ${this._activeView === nav.name ? 'active' : ''}" 
                       @click="${() => {
-                        const coreIds = ['calendar', 'meals', 'whiteboard', 'chores'];
+                        const viewName = nav.name; // This is 'Media' or 'Security' from your YAML
                         
-                        // 1. Identify if this is a CORE button or a CUSTOM button
-                        // Core buttons have an 'id', Custom buttons from your YAML have a 'name'
-                        const currentViewId = nav.id || nav.name; 
-                        
-                        // 2. Local UI Update (for sidebar highlights)
-                        this._activeView = currentViewId;
+                        this._activeView = viewName;
                         this._menuOpen = false;
                       
                         if (this.config.view_controller) {
-                          let targetOption = "";
-                      
-                          // 3. Logic to determine the exact string for the input_select
-                          if (coreIds.includes(nav.id)) {
-                            targetOption = nav.name;  
-                          } else {
-                            // For Media/Security, we use the 'name' field from your YAML
-                            targetOption = "Nightlight";
-                          }
-                      
-                          // 4. Perform the broadcast
+                          // Custom views broadcast their name to unhide the section
                           this.hass.callService('input_select', 'select_option', {
                             entity_id: this.config.view_controller,
-                            option: targetOption
+                            option: viewName
                           });
-                          
-                          // Debugging hint: If this still fails, uncomment the line below to see what is being sent
-                          console.log("Sending to HA:", targetOption);
+                          console.log("Custom Section Active: Sending " + viewName + " to HA");
                         }
                       }}">
                  <ha-icon icon="${nav.icon}"></ha-icon>
@@ -1332,6 +1315,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
