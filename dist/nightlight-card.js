@@ -358,22 +358,27 @@ class NightlightDashboard extends LitElement {
             ${coreNav.map(nav => html`
               <button class="nav-btn ${this._activeView === nav.id ? 'active' : ''}" 
                       @click="${() => {
-                        // Always update local state for sidebar highlighting
-                        this._activeView = nav.id || nav.name; 
+                        const coreIds = ['calendar', 'meals', 'whiteboard', 'chores'];
+                        const currentId = nav.id || nav.name;
+                        
+                        // 1. Update local state for sidebar highlighting
+                        this._activeView = currentId;
                         this._menuOpen = false;
                       
-                        // Broadcast to the Helper ONLY if it's a custom section
-                        const coreIds = ['calendar', 'meals', 'whiteboard', 'chores'];
-                        if (!coreIds.includes(this._activeView) && this.config.view_controller) {
+                        if (this.config.view_controller) {
+                          let targetOption = "";
+                      
+                          // 2. Map the ID to the exact text in your input_select options
+                          if (coreIds.includes(currentId)) {
+                            targetOption = "Nightlight"; // Use "Nightlight" instead of "None"
+                          } else {
+                            targetOption = nav.name; // Use "Media", "Security", etc.
+                          }
+                      
+                          // 3. Call service with the validated option
                           this.hass.callService('input_select', 'select_option', {
                             entity_id: this.config.view_controller,
-                            option: nav.name 
-                          });
-                        } else if (this.config.view_controller) {
-                          // Set helper to "Main" or "None" when core views are active so sections hide
-                          this.hass.callService('input_select', 'select_option', {
-                            entity_id: this.config.view_controller,
-                            option: 'None' 
+                            option: targetOption
                           });
                         }
                       }}">
@@ -1320,6 +1325,7 @@ window.customCards.push({
   name: "Nightlight Hub v1.6.8",
   description: "To-do memory and user detection enabled."
 });
+
 
 
 
