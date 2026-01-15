@@ -903,6 +903,7 @@ return css`
    .kid-item.done { background: rgba(52, 199, 89, 0.1) !important; border: 1px solid rgba(52, 199, 89, 0.3); opacity: 0.8; }
    .kid-item.done span { text-decoration: line-through !important; color: var(--secondary-text); }
    .chore-lock-msg { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--secondary-text); font-size: 1.2rem; font-weight: 700; }
+   .warning-banner { background: #ff5252; color: white; padding: 10px; border-radius: 8px; text-align: center; font-weight: 900; margin-bottom: 10px; animation: pulse 2s infinite; }
 
    /* --- Notes & Post-it Grid --- */
    .whiteboard-grid-container { height: 100%; display: flex; flex-direction: column; padding: 10px; }
@@ -924,7 +925,15 @@ return css`
    .alert-dot { position: absolute; top: 12px; right: 20px; width: 10px; height: 10px; background: #ff5252; border-radius: 50%; border: 2px solid var(--card); }
    .fab { position: fixed; bottom: 25px; right: 25px; width: 42px; height: 42px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 1.8rem; z-index: 100; cursor: pointer; }
    .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 3000; backdrop-filter: blur(10px); }
+   .modal-body.creation { background: var(--card); width: 90%; max-width: 450px; border-radius: 20px; overflow: hidden; box-shadow: 0 15px 50px rgba(0,0,0,0.3); }
    .modal-body { background: var(--card); width: 90%; max-width: 400px; border-radius: 20px; overflow: hidden; box-shadow: 0 15px 50px rgba(0,0,0,0.3); }
+   .modal-header { padding: 20px; color: #fff; text-align: left; font-size: 1.5rem; font-weight: 800; }
+   .modal-content { padding: 20px; }
+   .form-grid { display: flex; flex-direction: column; gap: 15px; }
+   .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+   .full-width { width: 100%; }
+   .modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 15px 20px; border-top: 1px solid var(--border); background: rgba(0,0,0,0.05); }
+   ha-textfield, ha-select { --mdc-shape-small: 8px; }
    .editor-shell { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
    .editor-shell .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
    .editor-shell .kid-box { border: 1px solid var(--border); padding: 10px; border-radius: 8px; margin-bottom: 10px; }
@@ -1278,4 +1287,5 @@ type: "nightlight-calendar-card",
 name: "Nightlight Hub v1.6.8",
 description: "To-do memory and user detection enabled."
 });
+
 
