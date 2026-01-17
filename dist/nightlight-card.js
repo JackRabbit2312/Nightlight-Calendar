@@ -820,8 +820,8 @@ static get styles() {
 return css`
    /* --- Layout & Hybrid Visibility --- */
    :host { display: block; width: 100%; transition: width 0.3s ease; --accent: #7b61ff; --bg: var(--primary-background-color); --card: var(--card-background-color); --text: var(--primary-text-color); --secondary-text: var(--secondary-text-color); --border: var(--divider-color); --gold: #ffd700; --ha-header: 56px; }
-   :host([mode="section"]) { width: 80px !important; position: absolute; z-index: 100; pointer-events: none; background: transparent !important; }
-   :host([mode="section"]) .side-rail { pointer-events: auto; background: transparent !important; border-right: none !important; box-shadow: none !important;}
+   :host([mode="section"]) { width: 100% !important; position: absolute; z-index: 100; pointer-events: none; background: transparent !important; }
+   :host([mode="section"]) .nightlight-hub { background: transparent !important; grid-template-columns: 0px 1fr !important; }
    :host([mode="section"]) .side-rail:not(.open) { display: none !important; }
    :host([mode="section"]) .main-stage { display: none !important; }
    :host([mode="core"]) { width: 100% !important; position: relative; }
@@ -838,12 +838,12 @@ return css`
    .nav-btn ha-icon { --mdc-icon-size: 22px; }
    .hamburger-menu { display: none; margin-right: 10px; --mdc-icon-button-size: 40px; }
    .menu-close-btn { display: none; background: none; border: none; color: var(--text); font-size: 1.5rem; position: absolute; top: 15px; right: 15px; z-index: 1001; }
-   .hamburger-menu-fixed { display: none; position: absolute; top: 5px; left: 5px; z-index: 200; color: var(--text); --mdc-icon-button-size: 48px; background: rgba(0, 0, 0, 0.3); border-radius: 50%; pointer-events: auto !important; }
+   .hamburger-menu-fixed { display: none; position: absolute; top: 10px; left: 10px; z-index: 200; color: var(--text); --mdc-icon-button-size: 48px; background: rgba(0, 0, 0, 0.3); border-radius: 50%; pointer-events: auto !important; }
    @media (max-width: 768px) {
        .hamburger-menu-fixed { display: inline-block; }
        .title-with-fixed-menu { margin-left: 45px !important; }
        :host([mode="section"]) .hamburger-menu-fixed { pointer-events: auto !important; }
-       .side-rail.open { pointer-events: auto !important; left: 0; display: flex !important; background: var(--card) !important; }
+       .side-rail.open { pointer-events: auto !important; left: 0; display: flex !important; background: var(--card) !important; width: 80px !important; }
        .main-stage .hamburger-menu { display: none !important; } 
        .top-bar h1 { margin-left: 45px !important; }
    }
@@ -950,9 +950,14 @@ return css`
    .editor-shell .kid-box { border: 1px solid var(--border); padding: 10px; border-radius: 8px; margin-bottom: 10px; }
    ha-expansion-panel { background: var(--secondary-background-color); border-radius: 8px; margin-bottom: 10px; }
    ha-textfield, ha-entity-picker { width: 100%; margin-top: 8px; }
-   @media (max-width: 768px) { .nightlight-hub { grid-template-columns: 1fr; } .hamburger-menu { display: inline-block; } .side-rail { position: fixed; left: -100px; top: 0; bottom: 0; width: 80px; z-index: 2000; transition: left 0.3s ease; } .side-rail.open { left: 0; } .menu-close-btn { display: block; } }
- `;
-}
+   @media (max-width: 768px) { 
+       .nightlight-hub { grid-template-columns: 1fr; } 
+       .hamburger-menu { display: inline-block; } 
+       .side-rail { position: fixed; left: -100px; top: 0; bottom: 0; width: 80px; z-index: 2000; transition: left 0.3s ease; } 
+       .side-rail.open { left: 0; display: flex !important; background: var(--card) !important; width: 80px !important; pointer-events: auto !important; } 
+       .menu-close-btn { display: block; } 
+   }
+`;
 }
 // --- CARD EDITOR CLASS (100% RESTORED) ---
 
@@ -1298,6 +1303,7 @@ type: "nightlight-calendar-card",
 name: "Nightlight Hub v1.6.8",
 description: "To-do memory and user detection enabled."
 });
+
 
 
 
