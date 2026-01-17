@@ -822,6 +822,7 @@ return css`
    :host { display: block; width: 100%; transition: width 0.3s ease; --accent: #7b61ff; --bg: var(--primary-background-color); --card: var(--card-background-color); --text: var(--primary-text-color); --secondary-text: var(--secondary-text-color); --border: var(--divider-color); --gold: #ffd700; --ha-header: 56px; }
    :host([mode="section"]) { width: 100% !important; position: absolute; z-index: 100; pointer-events: none; background: transparent !important; }
    :host([mode="section"]) .nightlight-hub { background: transparent !important; grid-template-columns: 0px 1fr !important; }
+   :host([mode="section"]) .side-rail { pointer-events: auto; background: transparent !important; border-right: none !important; box-shadow: none !important;}
    :host([mode="section"]) .side-rail:not(.open) { display: none !important; }
    :host([mode="section"]) .main-stage { display: none !important; }
    :host([mode="core"]) { width: 100% !important; position: relative; }
@@ -954,10 +955,10 @@ return css`
        .nightlight-hub { grid-template-columns: 1fr; } 
        .hamburger-menu { display: inline-block; } 
        .side-rail { position: fixed; left: -100px; top: 0; bottom: 0; width: 80px; z-index: 2000; transition: left 0.3s ease; } 
-       .side-rail.open { left: 0; display: none !important; background: var(--card) !important; width: 80px !important; pointer-events: auto !important; } 
+       .side-rail.open { left: 0; display: flex !important; background: var(--card) !important; width: 80px !important; pointer-events: auto !important; } 
        .menu-close-btn { display: block; } 
    }
- `;
+`;
 }
 }
 // --- CARD EDITOR CLASS (100% RESTORED) ---
@@ -1304,6 +1305,7 @@ type: "nightlight-calendar-card",
 name: "Nightlight Hub v1.6.8",
 description: "To-do memory and user detection enabled."
 });
+
 
 
 
