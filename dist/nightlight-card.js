@@ -957,7 +957,8 @@ return css`
        .side-rail.open { left: 0; display: none !important; background: var(--card) !important; width: 80px !important; pointer-events: auto !important; } 
        .menu-close-btn { display: block; } 
    }
-`;
+ `;
+ }
 }
 // --- CARD EDITOR CLASS (100% RESTORED) ---
 
@@ -1303,6 +1304,7 @@ type: "nightlight-calendar-card",
 name: "Nightlight Hub v1.6.8",
 description: "To-do memory and user detection enabled."
 });
+
 
 
 
