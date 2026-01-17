@@ -958,8 +958,8 @@ return css`
        .menu-close-btn { display: block; } 
    }
  `;
- }
 }
+
 // --- CARD EDITOR CLASS (100% RESTORED) ---
 
 class NightlightCardEditor extends LitElement {
@@ -1304,6 +1304,7 @@ type: "nightlight-calendar-card",
 name: "Nightlight Hub v1.6.8",
 description: "To-do memory and user detection enabled."
 });
+
 
 
 
