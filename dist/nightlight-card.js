@@ -839,11 +839,22 @@ return css`
    .nav-btn ha-icon { --mdc-icon-size: 22px; }
    .hamburger-menu { display: none; margin-right: 10px; --mdc-icon-button-size: 40px; }
    .menu-close-btn { display: none; background: none; border: none; color: var(--text); font-size: 1.5rem; position: absolute; top: 15px; right: 15px; z-index: 1001; }
-   .hamburger-menu-fixed { display: none; position: absolute; top: 10px; left: 10px; z-index: 200; color: var(--text); --mdc-icon-button-size: 48px; background: rgba(0, 0, 0, 0.3); border-radius: 50%; pointer-events: auto !important; }
+   .hamburger-menu-fixed { 
+    display: none; 
+    position: absolute; 
+    top: 10px; 
+    left: 10px; 
+    z-index: 200; 
+    color: var(--text); 
+    --mdc-icon-button-size: 48px; 
+    background: rgba(0, 0, 0, 0.3); 
+    border-radius: 50%; 
+    pointer-events: auto !important; 
+  }
    @media (max-width: 768px) {
        .hamburger-menu-fixed { display: inline-block; }
        .title-with-fixed-menu { margin-left: 45px !important; }
-       :host([mode="section"]) .hamburger-menu-fixed { pointer-events: auto !important; }
+       :host([mode="section"]) .hamburger-menu-fixed { display: inline-block !important; pointer-events: auto !important; }
        .side-rail.open { pointer-events: auto !important; left: 0; display: flex !important; background: var(--card) !important; width: 80px !important; }
        .main-stage .hamburger-menu { display: none !important; } 
        .top-bar h1 { margin-left: 45px !important; }
@@ -1305,6 +1316,7 @@ type: "nightlight-calendar-card",
 name: "Nightlight Hub v1.6.8",
 description: "To-do memory and user detection enabled."
 });
+
 
 
 
