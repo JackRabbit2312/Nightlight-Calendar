@@ -954,7 +954,7 @@ return css`
        .nightlight-hub { grid-template-columns: 1fr; } 
        .hamburger-menu { display: inline-block; } 
        .side-rail { position: fixed; left: -100px; top: 0; bottom: 0; width: 80px; z-index: 2000; transition: left 0.3s ease; } 
-       .side-rail.open { left: 0; display: flex !important; background: var(--card) !important; width: 80px !important; pointer-events: auto !important; } 
+       .side-rail.open { left: 0; display: flex !important; background: transparent !important; width: 80px !important; pointer-events: auto !important; } 
        .menu-close-btn { display: block; } 
    }
 `;
@@ -1303,6 +1303,7 @@ type: "nightlight-calendar-card",
 name: "Nightlight Hub v1.6.8",
 description: "To-do memory and user detection enabled."
 });
+
 
 
 
