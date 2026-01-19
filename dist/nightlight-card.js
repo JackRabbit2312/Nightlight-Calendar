@@ -859,7 +859,7 @@ return css`
        :host([mode="section"]) .hamburger-menu-fixed { display: inline-block !important; pointer-events: auto !important; }
        :host([mode="section"]) .side-rail:not(.open) { display: none !important; }
        :host([mode="section"]) .nightlight-hub { grid-template-columns: 0px 1fr !important; background: transparent !important; display: flex; }
-       :host([mode="core"]) .side-rail { display: none; }
+       :host([mode="core"]) .side-rail:not(.open) { display: none !important; }
        :host([mode="core"]) .hamburger-menu { display: inline-block !important; } 
    }
    
@@ -1316,6 +1316,7 @@ type: "nightlight-calendar-card",
 name: "Nightlight Hub v1.6.8",
 description: "To-do memory and user detection enabled."
 });
+
 
 
 
