@@ -820,14 +820,20 @@ static get styles() {
 return css`
    /* --- Layout & Hybrid Visibility --- */
    :host { display: block; width: 100%; transition: width 0.3s ease; --accent: #7b61ff; --bg: var(--primary-background-color); --card: var(--card-background-color); --text: var(--primary-text-color); --secondary-text: var(--secondary-text-color); --border: var(--divider-color); --gold: #ffd700; --ha-header: 56px; }
+   
    :host([mode="section"]) { width: 100% !important; position: absolute; z-index: 100; pointer-events: none; transition: width 0.3s ease; background: transparent !important;}
    :host([mode="section"]) .nightlight-hub { grid-template-columns: 0px 1fr !important; transition: width 0.3s ease; background: transparent !important;}
    :host([mode="section"]) .side-rail { pointer-events: auto; border-right: none !important; box-shadow: none !important; background: transparent !important;}
    :host([mode="section"]) .side-rail:not(.open) { display: none !important; }
    :host([mode="section"]) .main-stage { display: none !important; }
    :host([mode="section"]) .hamburger-menu-fixed { display: inline-block !important; pointer-events: none; }
+   :host([mode="section"]) .menu-close-btn { display: none !important; }
+   
    :host([mode="core"]) { width: 100% !important; position: relative; }
    :host([mode="core"]) .main-stage { display: flex !important; pointer-events: auto; }
+   :host([mode="core"]) .side-rail { display: flex !important; width: 80px; background: var(--card); }
+   :host([mode="core"]) .menu-close-btn, :host([mode="core"]) .hamburger-menu-fixed { display: none !important; }
+   
    .nightlight-hub.dark { --bg: #121212; --card: #1e1e1e; --text: #efefef; --border: #333; }
    .nightlight-hub { display: grid; grid-template-columns: 80px 1fr; height: calc(100vh - var(--ha-header, 56px)); background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
 
@@ -840,10 +846,12 @@ return css`
    .hamburger-menu { display: inline-block; margin-right: 10px; --mdc-icon-button-size: 40px; }
    .menu-close-btn { display: inline-block; background: none; border: none; color: var(--text); font-size: 1.5rem; position: absolute; top: 15px; right: 15px; z-index: 1001; }
    .hamburger-menu-fixed { display: none; position: absolute; top: 10px; left: 10px; z-index: 200; color: var(--text); --mdc-icon-button-size: 48px; background: rgba(0, 0, 0, 0.3); border-radius: 50%; pointer-events: auto !important; }
+   
    @media (max-width: 768px) {
        .hamburger-menu-fixed { display: inline-block; }
        .title-with-fixed-menu { margin-left: 45px !important; }
-       .side-rail.open { pointer-events: auto !important; left: 0; display: flex !important; background: var(--card) !important; width: 80px !important; top: var(--ha-header, 56px);}
+       .side-rail.open { pointer-events: auto !important; left: 0; display: flex !important; background: var(--card) !important; width: 80px !important; top: var(--ha-header, 56px); position: fixed; bottom: 0;}
+       .side-rail.open .menu-close-btn { display: block !important; }
        .main-stage .hamburger-menu { display: inline-block !important; } 
        .top-bar h1 { margin-left: 45px !important; }
        
@@ -1305,6 +1313,7 @@ type: "nightlight-calendar-card",
 name: "Nightlight Hub v1.6.8",
 description: "To-do memory and user detection enabled."
 });
+
 
 
 
