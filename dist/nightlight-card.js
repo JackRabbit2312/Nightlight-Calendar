@@ -413,6 +413,9 @@ render() {
       <main class="main-stage">
         <header class="top-bar">
           <div class="left-info">
+            <ha-icon-button class="hamburger-menu" @click="${() => this._menuOpen = true}">
+               <ha-icon icon="mdi:menu"></ha-icon>
+            </ha-icon-button>
             <h1 class="title-with-fixed-menu">${headerTitle}</h1>
             <div class="meta-row">
               <span class="clock">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
@@ -1317,6 +1320,7 @@ type: "nightlight-calendar-card",
 name: "Nightlight Hub v1.6.8",
 description: "To-do memory and user detection enabled."
 });
+
 
 
 
