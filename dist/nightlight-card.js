@@ -826,7 +826,7 @@ return css`
    :host([mode="section"]) .side-rail { pointer-events: auto; border-right: none !important; box-shadow: none !important; background: var(--card);}
    :host([mode="section"]) .side-rail:not(.open) { display: flex !important; }
    :host([mode="section"]) .main-stage { display: none !important; }
-   :host([mode="section"]) .hamburger-menu-fixed { display: inline-block !important; pointer-events: none; }
+   :host([mode="section"]) .hamburger-menu-fixed { display: none; }
    :host([mode="section"]) .menu-close-btn { display: none !important; }
    
    :host([mode="core"]) { width: 100% !important; position: relative; }
@@ -858,7 +858,7 @@ return css`
        
        :host([mode="section"]) .hamburger-menu-fixed { display: inline-block !important; pointer-events: auto !important; }
        :host([mode="section"]) .side-rail:not(.open) { display: none !important; }
-       :host([mode="section"]) .nightlight-hub { grid-template-columns: 0px 1fr !important; }
+       :host([mode="section"]) .nightlight-hub { grid-template-columns: 0px 1fr !important; background: transparent !important; display: flex; }
    }
    
    .side-rail { background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 15px 0; z-index: 20; }
@@ -1314,6 +1314,7 @@ type: "nightlight-calendar-card",
 name: "Nightlight Hub v1.6.8",
 description: "To-do memory and user detection enabled."
 });
+
 
 
 
