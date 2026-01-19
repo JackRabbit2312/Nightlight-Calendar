@@ -821,10 +821,10 @@ return css`
    /* --- Layout & Hybrid Visibility --- */
    :host { display: block; width: 100%; transition: width 0.3s ease; --accent: #7b61ff; --bg: var(--primary-background-color); --card: var(--card-background-color); --text: var(--primary-text-color); --secondary-text: var(--secondary-text-color); --border: var(--divider-color); --gold: #ffd700; --ha-header: 56px; }
    
-   :host([mode="section"]) { width: 100% !important; position: absolute; z-index: 100; pointer-events: none; transition: width 0.3s ease; background: transparent !important;}
+   :host([mode="section"]) { width: 100% !important; position: relative; z-index: 100; pointer-events: none; transition: width 0.3s ease; background: transparent !important;}
    :host([mode="section"]) .nightlight-hub { grid-template-columns: 0px 1fr !important; transition: width 0.3s ease; background: transparent !important;}
    :host([mode="section"]) .side-rail { pointer-events: auto; border-right: none !important; box-shadow: none !important; background: transparent !important;}
-   :host([mode="section"]) .side-rail:not(.open) { display: none !important; }
+   :host([mode="section"]) .side-rail:not(.open) { display: flex !important; }
    :host([mode="section"]) .main-stage { display: none !important; }
    :host([mode="section"]) .hamburger-menu-fixed { display: inline-block !important; pointer-events: none; }
    :host([mode="section"]) .menu-close-btn { display: none !important; }
@@ -1313,6 +1313,7 @@ type: "nightlight-calendar-card",
 name: "Nightlight Hub v1.6.8",
 description: "To-do memory and user detection enabled."
 });
+
 
 
 
