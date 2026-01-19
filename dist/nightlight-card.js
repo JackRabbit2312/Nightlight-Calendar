@@ -833,14 +833,14 @@ return css`
    /* --- Sidebar & Navigation --- */
    .logo-link { color: var(--accent); text-decoration: none; cursor: pointer; display: block; }
    .logo-area { color: var(--accent); margin-bottom: 20px; width: 30px; }
-   .side-rail { background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 15px 0; z-index: 20; }
+   .side-rail { background: none; border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 15px 0; z-index: 20; }
    .nav-btn { background: none; border: none; padding: 15px 0; color: #bbb; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; font-weight: bold; width: 100%; position: relative; }
    .nav-btn.active { color: var(--accent); border-right: 3px solid var(--accent); background: rgba(123, 97, 255, 0.05); }
    .nav-btn ha-icon { --mdc-icon-size: 22px; }
-   .hamburger-menu { display: none; margin-right: 10px; --mdc-icon-button-size: 40px; }
-   .menu-close-btn { display: none; background: none; border: none; color: var(--text); font-size: 1.5rem; position: absolute; top: 15px; right: 15px; z-index: 1001; }
+   .hamburger-menu { display: inline-block; margin-right: 10px; --mdc-icon-button-size: 40px; }
+   .menu-close-btn { display: inline-block; background: none; border: none; color: var(--text); font-size: 1.5rem; position: absolute; top: 15px; right: 15px; z-index: 1001; }
    .hamburger-menu-fixed { 
-    display: none; 
+    display: inline-block; 
     position: absolute; 
     top: 10px; 
     left: 10px; 
@@ -856,7 +856,7 @@ return css`
        .title-with-fixed-menu { margin-left: 45px !important; }
        :host([mode="section"]) .hamburger-menu-fixed { display: inline-block !important; pointer-events: auto !important; }
        .side-rail.open { pointer-events: auto !important; left: 0; display: flex !important; background: var(--card) !important; width: 80px !important; }
-       .main-stage .hamburger-menu { display: none !important; } 
+       .main-stage .hamburger-menu { display: inline-block !important; } 
        .top-bar h1 { margin-left: 45px !important; }
    }
    .side-rail.open { background: var(--card) !important; pointer-events: auto !important; left: 0; }
@@ -1316,6 +1316,7 @@ type: "nightlight-calendar-card",
 name: "Nightlight Hub v1.6.8",
 description: "To-do memory and user detection enabled."
 });
+
 
 
 
