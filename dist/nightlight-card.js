@@ -257,23 +257,39 @@ if (evsCount > 2) this._calendarMode = 'day';
 }
 
 async _submitEvent() {
-const root = this.shadowRoot;
-const summary = root.getElementById('new_summary').value;
-const date = root.getElementById('new_date').value;
-const startT = root.getElementById('new_start').value;
-const endT = root.getElementById('new_end').value;
-const calendar = root.getElementById('new_calendar').value;
-if (!summary || !date || !calendar) return;
-try {
-await this.hass.callService('calendar', 'create_event', {
-entity_id: calendar,
-summary: summary,
-start_date_time: `${date}T${startT}:00`,
-end_date_time: `${date}T${endT}:00`,
-});
-this._showAddModal = false;
-this._refreshData();
-} catch (e) { console.error(e); }
+  const root = this.shadowRoot;
+  const summary = root.getElementById('new_summary').value;
+  const calendar = root.getElementById('new_calendar').value;
+  
+  // Dates and Times
+  const dateStart = root.getElementById('new_date_start').value;
+  const timeStart = root.getElementById('new_start_time').value;
+  const dateEnd = root.getElementById('new_date_end').value;
+  const timeEnd = root.getElementById('new_end_time').value;
+  
+  // New Fields
+  const location = root.getElementById('new_location').value;
+  const description = root.getElementById('new_description').value;
+
+  if (!summary || !dateStart || !calendar) {
+    alert("Please provide at least a title, start date, and target calendar.");
+    return;
+  }
+
+  try {
+    await this.hass.callService('calendar', 'create_event', {
+      entity_id: calendar,
+      summary: summary,
+      location: location,
+      description: description,
+      start_date_time: `${dateStart}T${timeStart}:00`,
+      end_date_time: `${dateEnd}T${timeEnd}:00`,
+    });
+    this._showAddModal = false;
+    this._refreshData();
+  } catch (e) { 
+    console.error("Failed to create event:", e); 
+  }
 }
 
 // --- Specialized Utility Logic ---
@@ -794,29 +810,46 @@ return html`
 }
 
 _renderAddModal() {
-return html`
-     <div class="modal-backdrop" @click="${() => this._showAddModal = false}">
-       <div class="modal-body creation" @click="${e => e.stopPropagation()}">
-         <div class="modal-header" style="background: var(--accent)"><h2>New Family Event</h2></div>
-         <div class="modal-content">
-           <div class="form-grid">
-             <ha-textfield id="new_summary" label="Event Title" class="full-width"></ha-textfield>
-             <ha-textfield id="new_date" type="date" label="Date" .value="${new Date().toISOString().split('T')[0]}" class="full-width"></ha-textfield>
-             <div class="side-by-side">
-               <ha-textfield id="new_start" type="time" label="Start" .value="09:00"></ha-textfield>
-               <ha-textfield id="new_end" type="time" label="End" .value="10:00"></ha-textfield>
-             </div>
-             <ha-select id="new_calendar" label="Target Calendar" class="full-width">
-               ${(this.config.entities || []).map(ent => html`<mwc-list-item value="${ent.entity}">${ent.entity}</mwc-list-item>`)}
-             </ha-select>
-           </div>
-         </div>
-         <div class="modal-actions">
-            <mwc-button @click="${() => { this._showAddModal = false; this.requestUpdate(); }}">Cancel</mwc-button>
-            <mwc-button raised @click="${this._submitEvent}">Create Event</mwc-button>
-         </div>
-       </div>
-     </div>`;
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
+  const currentTime = now.toTimeString().slice(0, 5);
+  const oneHourLater = new Date(now.getTime() + (60 * 60 * 1000)).toTimeString().slice(0, 5);
+
+  return html`
+    <div class="modal-backdrop" @click="${() => this._showAddModal = false}">
+      <div class="modal-body creation" @click="${e => e.stopPropagation()}">
+        <div class="modal-header" style="background: var(--accent)"><h2>New Family Event</h2></div>
+        <div class="modal-content">
+          <div class="form-grid">
+            <ha-textfield id="new_summary" label="Event Title" class="full-width"></ha-textfield>
+            
+            <div class="side-by-side">
+              <ha-textfield id="new_date_start" type="date" label="Start Date" .value="${today}"></ha-textfield>
+              <ha-textfield id="new_start_time" type="time" label="Start Time" .value="${currentTime}"></ha-textfield>
+            </div>
+
+            <div class="side-by-side">
+              <ha-textfield id="new_date_end" type="date" label="End Date" .value="${today}"></ha-textfield>
+              <ha-textfield id="new_end_time" type="time" label="End Time" .value="${oneHourLater}"></ha-textfield>
+            </div>
+
+            <ha-textfield id="new_location" label="Location" icon="mdi:map-marker" class="full-width"></ha-textfield>
+            
+            <ha-textarea id="new_description" label="Notes/Description" rows="3" class="full-width"></ha-textarea>
+
+            <ha-select id="new_calendar" label="Target Calendar" class="full-width">
+              ${(this.config.entities || []).filter(e => e.entity.startsWith('calendar')).map(ent => 
+                html`<mwc-list-item value="${ent.entity}">${ent.entity}</mwc-list-item>`
+              )}
+            </ha-select>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <mwc-button @click="${() => { this._showAddModal = false; this.requestUpdate(); }}">Cancel</mwc-button>
+          <mwc-button raised @click="${this._submitEvent}">Create Event</mwc-button>
+        </div>
+      </div>
+    </div>`;
 }
 
 static get styles() {
@@ -1320,6 +1353,7 @@ type: "nightlight-calendar-card",
 name: "Nightlight Hub v1.6.8",
 description: "To-do memory and user detection enabled."
 });
+
 
 
 
