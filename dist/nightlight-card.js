@@ -1626,8 +1626,12 @@ class NightlightCardEditor extends LitElement {
   }
 }
 
-customElements.define("nightlight-dashboard-card", NightlightDashboard);
-customElements.define("nightlight-dashboard-editor", NightlightCardEditor);
+if (!customElements.get("nightlight-dashboard-card")) {
+  customElements.define("nightlight-dashboard-card", NightlightDashboard);
+}
+if (!customElements.get("nightlight-dashboard-editor")) {
+  customElements.define("nightlight-dashboard-editor", NightlightCardEditor);
+}
 
 window.customCards = window.customCards || [];
 window.customCards.push({
