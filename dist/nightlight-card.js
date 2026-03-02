@@ -623,7 +623,8 @@ class NightlightDashboard extends LitElement {
       const fields = doc.fields || {};
       return {
         id: fields.id?.stringValue,
-        title: fields.title?.stringValue || "Unknown Recipe"
+        title: fields.title?.stringValue || "Unknown Recipe",
+        url: fields.url?.stringValue || fields.sourceUrl?.stringValue || fields.link?.stringValue || ''
       };
     }).sort((a, b) => a.title.localeCompare(b.title));
 
@@ -651,6 +652,10 @@ class NightlightDashboard extends LitElement {
           
           let recipeTitle = "";
           let macros = null;
+          let isCustom = meal && meal.recipeId?.stringValue && meal.recipeId.stringValue.startsWith('custom_');
+          let selectedRecipe = recipes.find(r => r.id === meal?.recipeId?.stringValue);
+          let recipeUrl = selectedRecipe?.url || (meal?.recipeId?.stringValue && !isCustom ? `https://dinnerai-91aea.web.app/recipe/${meal.recipeId.stringValue}` : null);
+
           if (meal && meal.recipe && meal.recipe.mapValue && meal.recipe.mapValue.fields) {
              const rFields = meal.recipe.mapValue.fields;
              recipeTitle = rFields.title?.stringValue || "";
@@ -672,12 +677,21 @@ class NightlightDashboard extends LitElement {
               </div>
               
               <div class="meal-content">
-                <select class="meal-select" @change="${(e) => this._scheduleMeal(dateStr, e.target.value)}">
-                  <option value="">No meal planned</option>
-                  ${recipes.map(r => html`
-                    <option value="${r.id}" ?selected="${meal && meal.recipeId?.stringValue === r.id}">${r.title}</option>
-                  `)}
-                </select>
+                <div style="display: flex; gap: 8px; align-items: center; width: 100%;">
+                  <select class="meal-select" @change="${(e) => this._scheduleMeal(dateStr, e.target.value)}">
+                    <option value="">No meal planned</option>
+                    <option value="custom">✏️ Custom Meal...</option>
+                    ${isCustom ? html`<option value="${meal.recipeId.stringValue}" selected>🍽️ ${recipeTitle}</option>` : ''}
+                    ${recipes.map(r => html`
+                      <option value="${r.id}" ?selected="${meal && meal.recipeId?.stringValue === r.id}">${r.title}</option>
+                    `)}
+                  </select>
+                  ${recipeUrl ? html`
+                    <a href="${recipeUrl}" target="_blank" title="View Recipe" style="color: var(--nl-accent); opacity: 0.8; transition: opacity 0.2s; display: flex; align-items: center; justify-content: center;">
+                      <ha-icon icon="mdi:open-in-new" style="--mdc-icon-size: 22px;"></ha-icon>
+                    </a>
+                  ` : ''}
+                </div>
                 
                 ${macros ? html`
                   <div class="meal-macros">
@@ -694,7 +708,27 @@ class NightlightDashboard extends LitElement {
   }
 
   async _scheduleMeal(dateStr, recipeId) {
-    if (!recipeId) {
+    if (recipeId === 'custom') {
+      const customName = prompt("Enter custom meal name:");
+      if (!customName || !customName.trim()) {
+        this.requestUpdate(); // Reset dropdown
+        return;
+      }
+      const customId = 'custom_' + Date.now();
+      await this.hass.callService('rest_command', 'meal_planner_upsert_weekly_meal', {
+        id: dateStr,
+        date: dateStr,
+        recipe_id: customId,
+        recipe_title: customName.trim(),
+        prep_time: 0,
+        cook_time: 0,
+        servings: 1,
+        calories: 0,
+        protein: 0,
+        carbs: 0,
+        fat: 0
+      });
+    } else if (!recipeId) {
       await this.hass.callService('rest_command', 'meal_planner_delete_weekly_meal', { id: dateStr });
     } else {
       const recipesSensor = this.hass.states['sensor.meal_planner_recipes'];
@@ -1422,8 +1456,8 @@ class NightlightDashboard extends LitElement {
       .task-row.completed { opacity: 0.6; text-decoration: line-through; background: transparent; border-style: dashed; }
       .task-row.completed ha-icon { color: #10B981; }
       
-      .meals-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px; }
-      .meal-card { background: var(--nl-surface); border: 1px solid var(--nl-border); border-radius: 20px; padding: 20px; display: flex; flex-direction: column; box-shadow: var(--nl-shadow); transition: transform 0.2s; }
+      .meals-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; }
+      .meal-card { background: var(--nl-surface); border: 1px solid var(--nl-border); border-radius: 20px; padding: 20px; display: flex; flex-direction: column; box-shadow: var(--nl-shadow); transition: transform 0.2s; min-height: 180px; }
       .meal-card:hover { transform: translateY(-4px); }
       .meal-header { display: flex; justify-content: space-between; align-items: center; font-weight: 800; color: var(--nl-accent); margin-bottom: 12px; text-transform: uppercase; font-size: 0.85rem; letter-spacing: 1px; }
       .meal-date { color: var(--nl-fg-sec); font-weight: 600; }
