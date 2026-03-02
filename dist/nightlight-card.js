@@ -654,7 +654,7 @@ class NightlightDashboard extends LitElement {
           let macros = null;
           let isCustom = meal && meal.recipeId?.stringValue && meal.recipeId.stringValue.startsWith('custom_');
           let selectedRecipe = recipes.find(r => r.id === meal?.recipeId?.stringValue);
-          let recipeUrl = selectedRecipe?.url || (meal?.recipeId?.stringValue && !isCustom ? `https://dinnerai-91aea.web.app/recipe/${meal.recipeId.stringValue}` : null);
+          let recipeUrl = selectedRecipe?.url || (meal?.recipeId?.stringValue && !isCustom ? `https://ais-dev-dejxuyq62i5rodrjtojhwg-56188000843.asia-southeast1.run.app/recipe/${meal.recipeId.stringValue}` : null);
 
           if (meal && meal.recipe && meal.recipe.mapValue && meal.recipe.mapValue.fields) {
              const rFields = meal.recipe.mapValue.fields;
