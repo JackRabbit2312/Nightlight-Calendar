@@ -1,1385 +1,1637 @@
 /**
-* Nightlight Dashboard (v1.6.8)
-* Features: To-do List Memory, User-Specific Views, Stretched Banners, Refined Announcer
-* Fixes: Legacy WebView Compatibility, Hybrid Section Controller, Touch Interaction Fix
-*/
+ * Nightlight Dashboard (v3.3.0 - Skylight Edition)
+ * A modernize, streamlined Home Assistant card with To-do memory, 
+ * User-Specific Views, and Hybrid Controller logic.
+ */
 
 import {
-LitElement,
-html,
-css,
+  LitElement,
+  html,
+  css,
 } from "https://unpkg.com/lit-element@2.4.0/lit-element.js?module";
 
 class NightlightDashboard extends LitElement {
-static get properties() {
-return {
-hass: { type: Object },
-config: { type: Object },
-_activeView: { type: String },    // calendar, chores, meals, whiteboard
-_calendarMode: { type: String }, // month, week, day, agenda
-_events: { type: Array },
-_loading: { type: Boolean },
-_referenceDate: { type: Object },
-_selectedEvent: { type: Object },
-_activeCalendars: { type: Array },
-_showAddModal: { type: Boolean },
-_selectedCalendarId: { type: String },
-_menuOpen: { type: Boolean },
-_todoItems: { type: Array }
-};
-}
-
-static getConfigElement() { return document.createElement("nightlight-card-editor"); }
-static getStubConfig() { return { title: "Family Hub", theme: "light", entities: [], chore_start: "06:00", chore_end: "09:00" }; }
-
-constructor() {
-super();
-this._activeView = 'calendar';
-this._calendarMode = 'month';
-this._referenceDate = new Date();
-this._events = [];
-this._activeCalendars = [];
-this._loading = false;
-this._selectedEvent = null;
-this._showAddModal = false;
-this._selectedCalendarId = '';
-this._lastResetDate = localStorage.getItem('nightlight_reset_date');
-this._menuOpen = false;
-}
-
-setConfig(config) {
-if (!config.entities && !config.chores) throw new Error("Define entities or chores in YAML.");
-this.config = { 
-title: "Family Hub", 
-theme: "light", 
-logo_url: '/',
-...config 
-};
-if (this._activeCalendars.length === 0 && config.entities) {
-this._activeCalendars = config.entities.map(e => e.entity);
-}
-}
-
-// --- Data Management & Lifecycle ---
-
-updated(changedProps) {
-// 1. Unified Hybrid Mode Handling
-if (changedProps.has('_activeView')) {
-const coreIds = ['calendar', 'meals', 'whiteboard', 'chores'];
-
-// Control host sizing via attribute for interaction fix
-if (coreIds.includes(this._activeView)) {
-this.setAttribute('mode', 'core');
-} else {
-this.setAttribute('mode', 'section');
-}
-
-this.requestUpdate();
-if (this._activeView === 'whiteboard') this._fetchNotes(this.config.notes_entity);
-if (this._activeView === 'chores') this._fetchChoreData();
-}
-
-if (changedProps.has('hass')) {
-this._checkDailyReset();
-
-const oldHass = changedProps.get('hass');
-if (oldHass) {
-if (this._activeView === 'whiteboard' && this.hass.states[this.config.notes_entity] !== oldHass.states[this.config.notes_entity]) {
-this._fetchNotes(this.config.notes_entity);
-}
-if (this._activeView === 'chores') {
-this._fetchChoreData();
-}
-}
-}
-
-if (changedProps.has('hass') || changedProps.has('_activeView') || 
-changedProps.has('_calendarMode') || changedProps.has('_referenceDate')) {
-this._refreshData();
-}
-}
-
-async _fetchChoreData() {
-if (!this.hass || !this.config.chores) return;
-
-const allItems = [];
-for (const kid of this.config.chores) {
-if (kid.todo_list) {
-try {
-const result = await this.hass.callWS({
-type: "todo/item/list",
-entity_id: kid.todo_list,
-});
-const taggedItems = (result.items || []).map(item => {
-const newItem = JSON.parse(JSON.stringify(item));
-newItem.list_id = kid.todo_list;
-return newItem;
-});
-allItems.push(...taggedItems);
-} catch (e) { console.error("Chore fetch failed", kid.todo_list, e); }
-}
-}
-this._todoItems = allItems;
-this.requestUpdate();
-}
-
-async _checkDailyReset() {
-if (!this.hass || !this.config.chores) return;
-const today = new Date().toDateString();
-
-if (this._lastResetDate !== today) {
-for (const kid of this.config.chores) {
-if (kid.todo_list && this.hass.states[kid.todo_list]) {
-const todoState = this.hass.states[kid.todo_list];
-// Legacy check for Android WebView
-const items = (todoState && todoState.attributes && todoState.attributes.items) 
-? todoState.attributes.items 
-: [];
-
-for (const item of items) {
-if (item.status === 'completed') {
-await this.hass.callService('todo', 'update_item', {
-entity_id: kid.todo_list,
-item: item.summary,
-status: 'needs_action'
-});
-}
-}
-}
-}
-localStorage.setItem('nightlight_reset_date', today);
-this._lastResetDate = today;
-}
-}
-
-_getTodoStatus(entityId, taskLabel) {
-if (!this._todoItems) return false;
-
-const item = this._todoItems.find(i => 
-i.list_id === entityId && 
-i.summary.trim().toLowerCase() === taskLabel.trim().toLowerCase()
-);
-
-return item ? item.status === 'completed' : false;
-}
-
-async _toggleTodo(entityId, taskLabel, isDone) {
-if (!entityId) return;
-
-const newStatus = isDone ? 'needs_action' : 'completed';
-try {
-await this.hass.callService('todo', 'update_item', {
-entity_id: entityId,
-item: taskLabel,
-status: newStatus
-});
-await this._fetchChoreData();
-} catch (e) {
-console.error("Todo Toggle Failed:", e);
-}
-}
-
-_isTodoItemComplete(entityId, label) { return this._getTodoStatus(entityId, label); }
-async _handleTodoToggle(entityId, label, isDone) { return this._toggleTodo(entityId, label, isDone); }
-
-async _refreshData() {
-if (!this.hass || this._loading) return;
-this._loading = true;
-try {
-if (this._activeView === 'calendar') {
-await this._fetchEvents();
-}
-} finally {
-this._loading = false;
-}
-}
-
-async _fetchEvents() {
-let start = new Date(this._referenceDate);
-let end = new Date(this._referenceDate);
-
-if (this._calendarMode === 'month') {
-start = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth(), 1);
-end = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth() + 1, 0, 23, 59, 59);
-} else if (this._calendarMode === 'week') {
-const day = start.getDay();
-const diff = start.getDate() - day + (day === 0 ? -6 : 1);
-start.setDate(diff);
-start.setHours(0,0,0,0);
-end = new Date(start);
-end.setDate(start.getDate() + 7);
-} else {
-start.setHours(0,0,0,0);
-end.setHours(23,59,59,999);
-}
-
-const startStr = start.toISOString().replace(/\.\d+Z$/, "Z");
-const endStr = end.toISOString().replace(/\.\d+Z$/, "Z");
-
-const filteredEntities = (this.config.entities || []).filter(e => e.entity.startsWith('calendar'));
-const promises = filteredEntities.map(ent => {
-return this.hass.callApi('GET', `calendars/${ent.entity}?start=${startStr}&end=${endStr}`)
-.then(evs => evs.map(e => {
-const stateObj = this.hass.states[ent.entity];
-return {
-...e,
-color: ent.color || '#7b61ff',
-origin: ent.entity,
-friendly_name: (stateObj && stateObj.attributes) ? stateObj.attributes.friendly_name : ent.entity
-};
-}))
-.catch(() => []);
-});
-const results = await Promise.all(promises);
-this._events = results.flat();
-}
-
-// --- Interaction & Command Logic ---
-
-_navigate(dir) {
-const d = new Date(this._referenceDate);
-if (this._calendarMode === 'month') d.setMonth(d.getMonth() + dir);
-else if (this._calendarMode === 'week') d.setDate(d.getDate() + (dir * 7));
-else d.setDate(d.getDate() + dir);
-this._referenceDate = d;
-}
-
-_togglePersona(id) {
-this._activeCalendars = this._activeCalendars.includes(id) ? this._activeCalendars.filter(i => i !== id) : [...this._activeCalendars, id];
-}
-
-_handleMonthDayClick(dayNum, evsCount) {
-if (!dayNum) return;
-const newDate = new Date(this._referenceDate);
-newDate.setDate(dayNum);
-this._referenceDate = newDate;
-if (evsCount > 2) this._calendarMode = 'day';
-}
-
-async _submitEvent() {
-  const root = this.shadowRoot;
-  const summary = root.getElementById('new_summary').value;
-  const calendar = root.getElementById('new_calendar').value;
-  
-  // Dates and Times
-  const dateStart = root.getElementById('new_date_start').value;
-  const timeStart = root.getElementById('new_start_time').value;
-  const dateEnd = root.getElementById('new_date_end').value;
-  const timeEnd = root.getElementById('new_end_time').value;
-  
-  // New Fields
-  const location = root.getElementById('new_location').value;
-  const description = root.getElementById('new_description').value;
-
-  if (!summary || !dateStart || !calendar) {
-    alert("Please provide at least a title, start date, and target calendar.");
-    return;
+  static get properties() {
+    return {
+      hass: { type: Object },
+      config: { type: Object },
+      _activeView: { type: String },
+      _calendarMode: { type: String },
+      _events: { type: Array },
+      _loading: { type: Boolean },
+      _referenceDate: { type: Object },
+      _selectedEvent: { type: Object },
+      _activeCalendars: { type: Array },
+      _showAddModal: { type: Boolean },
+      _menuOpen: { type: Boolean },
+      _todoItems: { type: Array },
+      _weatherEntity: { type: String },
+      _themeMode: { type: String }
+    };
   }
 
-  try {
-    await this.hass.callService('calendar', 'create_event', {
-      entity_id: calendar,
-      summary: summary,
-      location: location,
-      description: description,
-      start_date_time: `${dateStart}T${timeStart}:00`,
-      end_date_time: `${dateEnd}T${timeEnd}:00`,
-    });
+  static getConfigElement() {
+    return document.createElement("nightlight-dashboard-editor");
+  }
+
+  static getStubConfig() {
+    return {
+      title: "Family Hub",
+      theme: "light",
+      entities: [],
+      periods: [
+        { name: "Morning", start: "06:00", end: "09:00" },
+        { name: "Afternoon", start: "09:01", end: "17:00" },
+        { name: "Evening", start: "17:01", end: "21:00" }
+      ],
+      chores: []
+    };
+  }
+
+  constructor() {
+    super();
+    this._activeView = 'calendar';
+    this._calendarMode = 'month';
+    this._referenceDate = new Date();
+    this._events = [];
+    this._activeCalendars = [];
+    this._loading = false;
+    this._selectedEvent = null;
     this._showAddModal = false;
-    this._refreshData();
-  } catch (e) { 
-    console.error("Failed to create event:", e); 
+    this._menuOpen = false;
+    this._lastResetDate = localStorage.getItem('nightlight_reset_date');
+    this._themeMode = 'light'; // Default
   }
-}
 
-// --- Specialized Utility Logic ---
+  setConfig(config) {
+    if (!config.entities && !config.chores) {
+      throw new Error("Define entities or chores in YAML.");
+    }
+    this.config = {
+      title: "Family Hub",
+      theme: "light",
+      logo_url: '/',
+      ...config
+    };
+    // Initialize active calendars if not set
+    if (this._activeCalendars.length === 0 && config.entities) {
+      this._activeCalendars = config.entities.map(e => e.entity);
+    }
+    if (config.theme) {
+      this._themeMode = config.theme;
+    }
+  }
 
-_isPast(event) {
-const end = new Date(event.end.dateTime || event.end.date);
-return new Date() > end;
-}
+  updated(changedProps) {
+    // 1. Unified Hybrid Mode Handling
+    if (changedProps.has('_activeView')) {
+      const coreIds = ['calendar', 'meals', 'shopping', 'whiteboard', 'chores'];
 
-_sanitize(text) {
-const div = document.createElement('div');
-div.textContent = text || 'No details provided.';
-return div.innerHTML;
-}
+      // Handle View Controller Input Select
+      if (this.config.view_controller && this.hass) {
+        const option = coreIds.includes(this._activeView) ? "Nightlight" : this._activeView;
+        const currentState = this.hass.states[this.config.view_controller]?.state;
+        if (currentState !== option) {
+           this.hass.callService('input_select', 'select_option', {
+            entity_id: this.config.view_controller,
+            option: option
+          });
+        }
+      }
 
-_getTimeStyles(e) {
-const s = new Date(e.start.dateTime);
-const end = new Date(e.end.dateTime);
-const top = (s.getHours() * 60 + s.getMinutes()) * 1.666;
-const height = Math.max(((end - s) / 60000) * 1.666, 30);
-return `top:${top}px;height:${height}px`;
-}
-
-_fragmentEvents(events, startRange = null, endRange = null) {
-const fragmented = [];
-events.forEach(event => {
-const start = new Date(event.start.dateTime || event.start.date);
-const end = new Date(event.end.dateTime || event.end.date);
-if (start.toDateString() === end.toDateString()) {
-const ev = JSON.parse(JSON.stringify(event));
-ev.displayDate = start.toDateString();
-fragmented.push(ev);
-} else {
-let current = new Date(start);
-while (current <= end) {
-if ((!startRange || current >= startRange) && (!endRange || current <= endRange)) {
-const ev = JSON.parse(JSON.stringify(event));
-ev.isFragment = true;
-ev.displayDate = current.toDateString();
-ev.isAllDay = true;
-fragmented.push(ev);
-}
-current.setDate(current.getDate() + 1);
-}
-}
-});
-return fragmented;
-}
-
-_isToday(n) { 
-const t = new Date(); 
-return n === t.getDate() && 
-this._referenceDate.getMonth() === t.getMonth() && 
-this._referenceDate.getFullYear() === t.getFullYear(); 
-}
-
-// --- Rendering Engines ---
-
-render() {
-  if (!this.hass) return html``;
-
-  const coreIds = ['calendar', 'meals', 'whiteboard', 'chores'];
-  const isCoreMode = coreIds.includes(this._activeView);
-  const modeClass = isCoreMode ? 'core-mode' : 'section-mode';
-
-  const headerTitle = (this._activeView === 'calendar')
-    ? this._referenceDate.toLocaleString('default', { month: 'long', year: 'numeric' })
-    : (this.config.title || "Family Hub");
-
-  const coreNav = [
-    { id: 'calendar', name: 'Calendar', icon: 'mdi:calendar-month' },
-    { id: 'meals', name: 'Dinner', icon: 'mdi:silverware-fork-knife' },
-    { id: 'whiteboard', name: 'Notes', icon: 'mdi:note-edit' },
-    { id: 'chores', name: 'Chores', icon: 'mdi:check-all' }
-  ];
-
-  const customNav = this.config.navigation || [];
-  const notesState = this.hass.states[this.config.notes_entity];
-  const hasNewNotes = notesState ? (new Date() - new Date(notesState.last_changed)) < (60 * 60 * 1000) : false;
-
-  return html`
-    <div class="nightlight-hub ${this.config.theme} ${modeClass} ${this._activeView}-active ${this._menuOpen ? 'menu-visible' : ''}">
+      if (this._activeView === 'whiteboard') this._fetchNotes(this.config.notes_entity);
+      if (this._activeView === 'chores') this._fetchChoreData();
       
-      <nav class="side-rail ${this._menuOpen ? 'open' : ''}">
-        <button class="menu-close-btn" @click="${() => this._menuOpen = false}">✕</button>
+      // Force refresh events if switching to agenda to ensure we have 30 days
+      if (this._activeView === 'calendar' && this._calendarMode === 'agenda') {
+          this._fetchEvents();
+      }
+    }
+
+    // 2. Data Refresh Logic
+    if (changedProps.has('hass')) {
+      this._checkDailyReset();
+      
+      const oldHass = changedProps.get('hass');
+      if (oldHass) {
+        if (this._activeView === 'whiteboard' && 
+            this.hass.states[this.config.notes_entity] !== oldHass.states[this.config.notes_entity]) {
+          this._fetchNotes(this.config.notes_entity);
+        }
+        if (this._activeView === 'chores') {
+          this._fetchChoreData();
+        }
+      }
+    }
+
+    if (changedProps.has('hass') || changedProps.has('_activeView') ||
+      changedProps.has('_calendarMode') || changedProps.has('_referenceDate')) {
+      this._refreshData();
+    }
+  }
+
+  // --- Data Management ---
+
+  async _fetchChoreData() {
+    if (!this.hass || !this.config.chores) return;
+
+    const allItems = [];
+    for (const kid of this.config.chores) {
+      if (kid.todo_list) {
+        try {
+          // Fetch items using standard WebSocket (efficient equivalent of todo.get_items)
+          const result = await this.hass.callWS({
+            type: "todo/item/list",
+            entity_id: kid.todo_list,
+          });
+          
+          const taggedItems = (result.items || []).map(item => {
+            const newItem = JSON.parse(JSON.stringify(item));
+            newItem.list_id = kid.todo_list;
+            
+            // Logic for 1. 2. 3. prefixes to differentiate Morning/Afternoon/Night
+            const summary = newItem.summary || "";
+            const match = summary.match(/^([1-3])\.\s*(.*)/);
+            if (match) {
+                newItem.period_index = parseInt(match[1]); // 1, 2, or 3
+                newItem.label = match[2]; // Truncated text (e.g., "Brush Teeth")
+            } else {
+                newItem.period_index = 0; // No prefix found
+                newItem.label = summary;
+            }
+            
+            return newItem;
+          });
+          allItems.push(...taggedItems);
+        } catch (e) {
+          console.warn("Chore fetch failed for", kid.todo_list);
+        }
+      }
+    }
+    this._todoItems = allItems;
+    this.requestUpdate(); 
+  }
+
+  async _checkDailyReset() {
+    if (!this.hass || !this.config.chores) return;
+    const today = new Date().toDateString();
+
+    if (this._lastResetDate !== today) {
+      for (const kid of this.config.chores) {
+        if (kid.todo_list && this.hass.states[kid.todo_list]) {
+          try {
+             const result = await this.hass.callWS({
+                type: "todo/item/list",
+                entity_id: kid.todo_list,
+             });
+             const items = result.items || [];
+             
+             for (const item of items) {
+                if (item.status === 'completed') {
+                  await this.hass.callService('todo', 'update_item', {
+                    entity_id: kid.todo_list,
+                    item: item.uid || item.summary,
+                    status: 'needs_action'
+                  });
+                }
+             }
+          } catch(e) {
+             console.error("Daily Reset Failed:", e);
+          }
+        }
+      }
+      localStorage.setItem('nightlight_reset_date', today);
+      this._lastResetDate = today;
+    }
+  }
+
+  async _toggleTodo(item) {
+    if (!item) return;
+    const newStatus = item.status === 'completed' ? 'needs_action' : 'completed';
+    
+    // Optimistic UI update
+    const oldStatus = item.status;
+    item.status = newStatus;
+    this.requestUpdate();
+
+    try {
+      await this.hass.callService('todo', 'update_item', {
+        entity_id: item.list_id,
+        item: item.uid || item.summary, // Use original summary (with prefix) or UID
+        status: newStatus
+      });
+      // Background refresh to ensure sync
+      this._fetchChoreData();
+    } catch (e) {
+      console.error("Todo Toggle Failed:", e);
+      // Revert on failure
+      item.status = oldStatus;
+      this.requestUpdate();
+    }
+  }
+
+  async _refreshData() {
+    if (!this.hass || this._loading) return;
+    this._loading = true;
+    try {
+      if (this._activeView === 'calendar') {
+        await this._fetchEvents();
+      }
+    } finally {
+      this._loading = false;
+    }
+  }
+
+  async _fetchEvents() {
+    let start = new Date(this._referenceDate);
+    let end = new Date(this._referenceDate);
+
+    // Agenda: Fetch 30 days from today always
+    if (this._calendarMode === 'agenda') {
+        start = new Date();
+        start.setHours(0,0,0,0);
+        end = new Date(start);
+        end.setDate(start.getDate() + 30);
+    } 
+    else if (this._calendarMode === 'month') {
+      start = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth(), 1);
+      end = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth() + 1, 0, 23, 59, 59);
+    } else if (this._calendarMode === 'week') {
+      const day = start.getDay();
+      const diff = start.getDate() - day + (day === 0 ? -6 : 1);
+      start.setDate(diff);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(start);
+      end.setDate(start.getDate() + 7);
+    } else {
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    }
+
+    const startStr = start.toISOString();
+    const endStr = end.toISOString();
+
+    const filteredEntities = (this.config.entities || []).filter(e => e.entity.startsWith('calendar'));
+    const promises = filteredEntities.map(ent => {
+      return this.hass.callApi('GET', `calendars/${ent.entity}?start=${startStr}&end=${endStr}`)
+        .then(evs => evs.map(e => {
+          const stateObj = this.hass.states[ent.entity];
+          return {
+            ...e,
+            color: ent.color || '#7b61ff',
+            origin: ent.entity,
+            friendly_name: (stateObj && stateObj.attributes) ? stateObj.attributes.friendly_name : ent.entity,
+            icon: (stateObj && stateObj.attributes) ? stateObj.attributes.icon : null
+          };
+        }))
+        .catch(() => []);
+    });
+    const results = await Promise.all(promises);
+    this._events = results.flat();
+  }
+
+  async _fetchNotes(entityId) {
+    if (!entityId || !this.hass) return;
+    try {
+      const result = await this.hass.callWS({
+        type: "todo/item/list",
+        entity_id: entityId,
+      });
+      this._todoItems = (result.items || []).filter(item => item.status === 'needs_action');
+      this.requestUpdate();
+    } catch (e) {
+      console.error("Failed to fetch notes:", e);
+    }
+  }
+
+  // --- Interaction & Utils ---
+
+  _navigate(dir) {
+    const d = new Date(this._referenceDate);
+    if (this._calendarMode === 'month') d.setMonth(d.getMonth() + dir);
+    else if (this._calendarMode === 'week') d.setDate(d.getDate() + (dir * 7));
+    else d.setDate(d.getDate() + dir);
+    this._referenceDate = d;
+  }
+
+  _togglePersona(id) {
+    this._activeCalendars = this._activeCalendars.includes(id) ?
+      this._activeCalendars.filter(i => i !== id) : [...this._activeCalendars, id];
+  }
+
+  _handleMonthDayClick(dayNum, evsCount) {
+    if (!dayNum) return;
+    const newDate = new Date(this._referenceDate);
+    newDate.setDate(dayNum);
+    this._referenceDate = newDate;
+    // Always switch to day view on day click, regardless of events
+    this._calendarMode = 'day';
+  }
+
+  _toggleTheme() {
+      this._themeMode = this._themeMode === 'dark' ? 'light' : 'dark';
+      this.requestUpdate();
+  }
+
+  async _submitEvent() {
+    const root = this.shadowRoot;
+    const summary = root.getElementById('new_summary').value;
+    const calendar = root.getElementById('new_calendar').value;
+    const dateStart = root.getElementById('new_date_start').value;
+    const timeStart = root.getElementById('new_start_time').value;
+    const dateEnd = root.getElementById('new_date_end').value;
+    const timeEnd = root.getElementById('new_end_time').value;
+    const location = root.getElementById('new_location').value;
+    const description = root.getElementById('new_description').value;
+
+    if (!summary || !dateStart || !calendar) {
+      alert("Please provide at least a title, start date, and target calendar.");
+      return;
+    }
+
+    try {
+      await this.hass.callService('calendar', 'create_event', {
+        entity_id: calendar,
+        summary: summary,
+        location: location,
+        description: description,
+        start_date_time: `${dateStart}T${timeStart}:00`,
+        end_date_time: `${dateEnd}T${timeEnd}:00`,
+      });
+      this._showAddModal = false;
+      this._refreshData();
+    } catch (e) {
+      console.error("Failed to create event:", e);
+    }
+  }
+
+  _isPast(event) {
+    const end = new Date(event.end.dateTime || event.end.date);
+    return new Date() > end;
+  }
+
+  _sanitize(text) {
+    const div = document.createElement('div');
+    div.textContent = text || 'No details provided.';
+    return div.innerHTML;
+  }
+
+  _getTimeStyles(e) {
+    const s = new Date(e.start.dateTime);
+    const end = new Date(e.end.dateTime);
+    // Calculation: 60px height per hour = 1px per minute.
+    const top = (s.getHours() * 60 + s.getMinutes()) * 1; 
+    const durationMinutes = (end - s) / 60000;
+    const height = Math.max(durationMinutes * 1, 30);
+    return `top:${top}px;height:${height}px`;
+  }
+
+  _fragmentEvents(events, startRange = null, endRange = null) {
+    const fragmented = [];
+    events.forEach(event => {
+      const start = new Date(event.start.dateTime || event.start.date);
+      const end = new Date(event.end.dateTime || event.end.date);
+      if (start.toDateString() === end.toDateString()) {
+        const ev = JSON.parse(JSON.stringify(event));
+        ev.displayDate = start.toDateString();
+        fragmented.push(ev);
+      } else {
+        let current = new Date(start);
+        while (current <= end) {
+          if ((!startRange || current >= startRange) && (!endRange || current <= endRange)) {
+            const ev = JSON.parse(JSON.stringify(event));
+            ev.isFragment = true;
+            ev.displayDate = current.toDateString();
+            ev.isAllDay = true;
+            fragmented.push(ev);
+          }
+          current.setDate(current.getDate() + 1);
+        }
+      }
+    });
+    return fragmented;
+  }
+
+  _isToday(n) {
+    const t = new Date();
+    return n === t.getDate() &&
+      this._referenceDate.getMonth() === t.getMonth() &&
+      this._referenceDate.getFullYear() === t.getFullYear();
+  }
+
+  // --- RENDERERS ---
+
+  render() {
+    if (!this.hass) return html``;
+
+    const coreNav = [
+      { id: 'calendar', name: 'Calendar', icon: 'mdi:calendar-month' },
+      { id: 'meals', name: 'Meals', icon: 'mdi:silverware-fork-knife' },
+      { id: 'shopping', name: 'Shopping', icon: 'mdi:cart-outline' },
+      { id: 'whiteboard', name: 'Notes', icon: 'mdi:note-edit' },
+      { id: 'chores', name: 'Chores', icon: 'mdi:check-all' }
+    ];
+
+    let headerTitle = this.config.title || "Family Hub";
+    if (this._activeView === 'calendar') {
+        headerTitle = this._referenceDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+    } else {
+        const core = coreNav.find(n => n.id === this._activeView);
+        if (core) headerTitle = core.name;
+        else {
+            const custom = (this.config.navigation || []).find(n => n.name === this._activeView);
+            if (custom) headerTitle = custom.name;
+        }
+    }
+
+    const customNav = this.config.navigation || [];
+    const notesState = this.hass.states[this.config.notes_entity];
+    const hasNewNotes = notesState ? (new Date() - new Date(notesState.last_changed)) < (60 * 60 * 1000) : false;
+    
+    // Explicit theme handling
+    const activeTheme = this._themeMode === 'dark' ? 'dark' : 'light';
+
+    return html`
+      <div class="nightlight-hub ${activeTheme} ${this._menuOpen ? 'menu-open' : ''}">
         
-        <a href="${this.config.logo_url || '/'}" class="logo-link">
-          <div class="logo-area">
-             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12,3L2,12H5V20H19V12H22L12,3M12,8.5C13.5,8.5 15,10 15,11.5C15,13.2 12,16 12,16C12,16 9,13.2 9,11.5C9,10 10.5,8.5 12,8.5Z"/></svg>
+        <!-- SIDEBAR -->
+        <nav class="sidebar">
+          <div class="sidebar-top">
+             <button class="mobile-close" @click="${() => this._menuOpen = false}">✕</button>
+             <a href="${this.config.logo_url || '/'}" class="logo">
+               <ha-icon icon="mdi:home-assistant"></ha-icon>
+             </a>
           </div>
-        </a>
 
-        <div class="nav-items">
-          ${coreNav.map(nav => html`
-            <button class="nav-btn ${this._activeView === nav.id ? 'active' : ''}" 
-                    @click="${() => {
-                      this._activeView = nav.id;
-                      this._menuOpen = false;
-                      if (this.config.view_controller) {
-                        this.hass.callService('input_select', 'select_option', {
-                          entity_id: this.config.view_controller,
-                          option: "Nightlight"
-                        });
-                      }
-                    }}">
-               <ha-icon icon="${nav.icon}"></ha-icon>
-               <span>${nav.name}</span>
-               ${nav.id === 'whiteboard' && hasNewNotes ? html`<div class="alert-dot"></div>` : ''}
-            </button>
-          `)}
+          <div class="nav-group">
+            ${coreNav.map(nav => html`
+              <button class="nav-item ${this._activeView === nav.id ? 'active' : ''}"
+                      @click="${() => this._switchView(nav.id)}">
+                 <div class="nav-icon-container">
+                   <ha-icon icon="${nav.icon}"></ha-icon>
+                   ${nav.id === 'whiteboard' && hasNewNotes ? html`<div class="badge"></div>` : ''}
+                 </div>
+                 <span>${nav.name}</span>
+              </button>
+            `)}
+          </div>
 
-          ${customNav.length > 0 ? html`<hr style="width: 50%; opacity: 0.1; margin: 10px 0;">` : ''}
+          ${customNav.length > 0 ? html`<div class="nav-divider"></div>` : ''}
 
-          ${customNav.map(nav => html`
-            <button class="nav-btn ${this._activeView === nav.name ? 'active' : ''}" 
-                    @click="${() => {
-                      this._activeView = nav.name;
-                      this._menuOpen = false;
-                      if (this.config.view_controller) {
-                        this.hass.callService('input_select', 'select_option', {
-                          entity_id: this.config.view_controller,
-                          option: nav.name
-                        });
-                      }
-                    }}">
-               <ha-icon icon="${nav.icon}"></ha-icon>
-               <span>${nav.name}</span>
-            </button>
-          `)}
-        </div>
-      </nav>
+          <div class="nav-group">
+            ${customNav.map(nav => html`
+              <button class="nav-item ${this._activeView === nav.name ? 'active' : ''}"
+                      @click="${() => this._switchView(nav.name, true)}">
+                 <div class="nav-icon-container"><ha-icon icon="${nav.icon}"></ha-icon></div>
+                 <span>${nav.name}</span>
+              </button>
+            `)}
+          </div>
 
-      <ha-icon-button class="hamburger-menu-fixed" @click="${() => this._menuOpen = true}">
-        <ha-icon icon="mdi:menu"></ha-icon>
-      </ha-icon-button>
+          <div class="sidebar-spacer" style="flex: 1"></div>
+          
+          <!-- Calendar Controls moved to Sidebar Bottom -->
+          ${this._activeView === 'calendar' ? html`
+            <div class="sidebar-controls">
+                <div class="control-group">
+                  <div class="control-label">View</div>
+                  <div class="view-toggles sidebar-mode">
+                    ${['month', 'week', 'day', 'agenda'].map(m => html`
+                      <button class="${this._calendarMode === m ? 'active' : ''}" 
+                              @click="${() => { this._calendarMode = m; this._menuOpen = false; }}">
+                        ${m}
+                      </button>
+                    `)}
+                  </div>
+                  <button class="today-btn full" @click="${() => { this._referenceDate = new Date(); this._menuOpen = false; }}">Jump to Today</button>
+                </div>
 
-      <main class="main-stage">
-        <header class="top-bar">
-          <div class="left-info">
-            <ha-icon-button class="hamburger-menu" @click="${() => this._menuOpen = true}">
-               <ha-icon icon="mdi:menu"></ha-icon>
-            </ha-icon-button>
-            <h1 class="title-with-fixed-menu">${headerTitle}</h1>
-            <div class="meta-row">
-              <span class="clock">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-              <div class="nav-arrows">
-                <button @click="${() => this._navigate(-1)}">❮</button>
-                <button @click="${() => this._navigate(1)}">❯</button>
+                <div class="control-group">
+                  <div class="control-label">Calendars</div>
+                  <div class="persona-stack sidebar-mode">
+                    ${(this.config.entities || []).filter(e => e.entity.startsWith('calendar')).map(ent => {
+                        const cal = this._events.find(ev => ev.origin === ent.entity) || {};
+                        const icon = ent.icon || cal.icon;
+                        const initial = ent.name ? ent.name[0] : (cal.friendly_name ? cal.friendly_name[0] : 'C');
+                        
+                        return html`
+                        <div class="persona-dot ${this._activeCalendars.includes(ent.entity) ? 'active' : 'inactive'}" 
+                             style="background: ${ent.color}; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold;" 
+                             title="${ent.entity}"
+                             @click="${() => this._togglePersona(ent.entity)}">
+                          ${ent.picture ? html`<img src="${ent.picture}">` : 
+                             (icon ? html`<ha-icon icon="${icon}" style="--mdc-icon-size: 16px;"></ha-icon>` : initial)}
+                        </div>
+                      `})}
+                  </div>
+                </div>
+            </div>
+          ` : ''}
+        </nav>
+
+        <ha-icon-button class="mobile-toggle" @click="${() => this._menuOpen = true}">
+          <ha-icon icon="mdi:menu"></ha-icon>
+        </ha-icon-button>
+
+        <!-- MAIN CONTENT AREA -->
+        <main class="stage">
+          <header class="stage-header">
+            <div class="header-left">
+              <div class="header-titles">
+                <h1>${headerTitle}</h1>
+                <div class="subtitle">
+                   <span class="clock">${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                   ${this._activeView === 'calendar' ? html`
+                     <div class="nav-controls">
+                       <button @click="${() => this._navigate(-1)}"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
+                       <button @click="${() => this._navigate(1)}"><ha-icon icon="mdi:chevron-right"></ha-icon></button>
+                     </div>
+                   `: ''}
+                </div>
               </div>
             </div>
-          </div>
 
-          <div class="right-actions">
-            <div class="view-switcher">
-              ${['month', 'week', 'day', 'agenda'].map(m => html`
-                <button class="${this._calendarMode === m ? 'active' : ''}" 
-                        @click="${() => { this._calendarMode = m; this._activeView = 'calendar'; }}">
-                  ${m.toUpperCase()}
-                </button>
-              `)}
-            </div>
-            
-            <button class="today-btn" @click="${() => { this._referenceDate = new Date(); this._activeView = 'calendar'; }}">Today</button>
-            
-            <div class="persona-filters">
-              ${(this.config.entities || []).filter(e => e.entity.startsWith('calendar')).map(ent => html`
-                <div class="persona ${this._activeCalendars.includes(ent.entity) ? 'active' : 'inactive'}" 
-                     style="background: ${ent.color}" 
-                     @click="${() => this._togglePersona(ent.entity)}">
-                  ${ent.picture ? html`<img src="${ent.picture}">` : ent.entity.split('.')[1][0].toUpperCase()}
-                </div>
-              `)}
-            </div>
-          </div>
-        </header>
-
-        <section class="content-area">
-          ${this._renderActiveModule()}
-        </section>
-      </main>
-
-      ${this._selectedEvent ? this._renderModal() : ''}
-      ${this._showAddModal ? this._renderAddModal() : ''}
-      
-      <button class="fab" @click="${() => { this._showAddModal = true; this.requestUpdate(); }}">+</button>
-    </div>
-  `;
-}
-
-_renderActiveModule() {
-const coreIds = ['calendar', 'meals', 'whiteboard', 'chores'];
-
-if (coreIds.includes(this._activeView)) {
-switch(this._activeView) {
-case 'meals': return this._renderMealPlanner();
-case 'whiteboard': return this._renderWhiteboard();
-case 'chores': return this._renderChoreDashboard();
-default: return this._renderCalendarView();
-}
-}
-
-return null; 
-}
-
-_renderMealPlanner() {
-const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const entities = this.config.meal_entities || {};
-
-return html`
-     <div class="meal-grid-view">
-       ${days.map(day => {
-         const entityId = entities[day];
-         const stateObj = this.hass.states[entityId];
-         
-         let displayValue = "";
-         if (stateObj && stateObj.state !== "unknown" && stateObj.state !== "none") {
-           const parts = stateObj.state.split(' | ');
-           const content = parts[0];
-           const timestamp = parts[1];
-           
-           if (timestamp && (new Date() - new Date(timestamp)) > (5 * 24 * 60 * 60 * 1000)) {
-             this._saveMeal(day, ""); 
-             displayValue = "";
-           } else {
-             displayValue = content || "";
-           }
-         }
-
-         return html`
-           <div class="meal-card-item">
-             <div class="meal-day-label">${day}</div>
-             <textarea 
-               placeholder="What's for dinner?" 
-               .value="${displayValue}" 
-               @change="${(e) => this._saveMeal(day, e.target.value)}">
-             </textarea>
-           </div>`;
-       })}
-     </div>`;
-}
-
-async _saveMeal(day, value) {
-const mealEntities = this.config.meal_entities;
-const entityId = mealEntities ? mealEntities[day] : null;
-if (!entityId) return;
-
-const timestamp = new Date().toISOString();
-const payload = value ? value + " | " + timestamp : "";
-
-await this.hass.callService('input_text', 'set_value', {
-entity_id: entityId,
-value: payload
-});
-}
-
-async _fetchNotes(entityId) {
-if (!entityId || !this.hass) return;
-try {
-const result = await this.hass.callWS({
-type: "todo/item/list",
-entity_id: entityId,
-});
-this._todoItems = (result.items || []).filter(item => item.status === 'needs_action');
-this.requestUpdate();
-} catch (e) {
-console.error("Failed to fetch notes:", e);
-}
-}
-
-_renderWhiteboard() {
-const entityId = this.config.notes_entity;
-if (!this._todoItems && entityId) {
-this._fetchNotes(entityId);
-}
-
-const items = this._todoItems || [];
-
-return html`
-     <div class="whiteboard-grid-container">
-       <header class="whiteboard-header">
-         Family Notes
-         <button class="add-note-inline" @click="${() => this._showAddNotePrompt(entityId)}">
-           <ha-icon icon="mdi:plus"></ha-icon> New Note
-         </button>
-       </header>
-       
-       <div class="post-it-grid">
-         ${items.length === 0 
-           ? html`<div class="empty-msg">No active notes.</div>` 
-           : items.map(item => {
-               const parts = item.summary.split('--');
-               const formattedSummary = parts.map((line, index) => {
-                 return index === 0 ? line : '\n• ' + line.trim();
-               }).join('');
-
-               return html`
-                 <div class="post-it">
-                   <button class="delete-note" @click="${() => this._deleteNote(entityId, item.uid || item.summary)}">✕</button>
-                   <div class="note-content">${formattedSummary}</div>
-                 </div>
-               `;
-             })
-         }
-       </div>
-     </div>`;
-}  
-
-async _showAddNotePrompt(entityId) {
-const note = prompt("Enter your note:");
-if (note) {
-await this.hass.callService('todo', 'add_item', {
-entity_id: entityId,
-item: note
-});
-await this._fetchNotes(entityId);
-}
-}
-
-async _deleteNote(entityId, identifier) {
-if (!entityId) return;
-if (!confirm("Are you sure you want to delete this note?")) return;
-try {
-await this.hass.callService('todo', 'update_item', {
-entity_id: entityId,
-item: identifier,
-status: 'completed'
-});
-await this._fetchNotes(entityId);
-} catch (e) {
-console.error("Nightlight: Delete failed", e);
-}
-}
-
-_renderCalendarView() {
-if (this._calendarMode === 'month') return this._renderMonthGrid();
-if (this._calendarMode === 'agenda') return this._renderAgenda();
-return this._renderTimeGrid(this._calendarMode === 'week' ? 7 : 1);
-}
-
-_renderMonthGrid() {
-const start = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth(), 1);
-const end = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth() + 1, 0);
-const firstDay = (start.getDay() + 6) % 7;
-const days = [];
-for (let i = 0; i < firstDay; i++) days.push({ n: null, cur: false });
-for (let i = 1; i <= end.getDate(); i++) days.push({ n: i, cur: true });
-
-return html`
-     <div class="month-wrapper">
-       <div class="labels-row">${['MON','TUE','WED','THU','FRI','SAT','SUN'].map(l => html`<div>${l}</div>`)}</div>
-       <div class="month-grid">
-         ${days.map(d => {
-           const evs = this._events.filter(e => d.cur && new Date(e.start.dateTime || e.start.date).getDate() === d.n && this._activeCalendars.includes(e.origin))
-             .sort((a, b) => (a.start.dateTime || a.start.date).localeCompare(b.start.dateTime || b.start.date));
-           return html`
-             <div class="day-cell ${!d.cur ? 'empty' : ''} ${this._isToday(d.n) ? 'today' : ''}" @click="${() => this._handleMonthDayClick(d.n, evs.length)}">
-               <span class="day-num">${d.n || ''}</span>
-               <div class="ev-stack">
-                 ${evs.slice(0, 4).map(e => html`
-                   <div class="ev-pill ${this._isPast(e) ? 'is-past' : ''}" style="border-left: 4px solid ${e.color}; background:${e.color}15; color:${e.color}" @click="${(ev) => { ev.stopPropagation(); this._selectedEvent = e; }}">
-                     ${e.summary}
-                   </div>`)}
-               </div>
-             </div>`;
-         })}
-       </div>
-     </div>`;
-}
-
-_renderTimeGrid(daysCount) {
-const start = new Date(this._referenceDate);
-if (daysCount === 7) {
-const day = start.getDay();
-start.setDate(start.getDate() - day + (day === 0 ? -6 : 1));
-}
-const hours = Array.from({length: 24}, (_, i) => i);
-const fragmented = this._fragmentEvents(this._events, start);
-
-return html`
-     <div class="time-grid-root">
-       <div class="header-row-locked">
-           <div class="axis-placeholder"></div>
-           <div class="date-grid" style="--cols: ${daysCount}">
-              ${Array.from({length: daysCount}).map((_, i) => {
-                 const d = new Date(start); d.setDate(start.getDate() + i);
-                 return html`<div class="header-cell">${d.toLocaleDateString('default', {weekday: 'short', day: 'numeric'})}</div>`;
-              })}
-           </div>
-       </div>
-       <div class="all-day-sync-row">
-           <div class="axis-label-blank">All Day</div>
-           <div class="ad-grid" style="--cols: ${daysCount}">
-               ${Array.from({length: daysCount}).map((_, i) => {
-                   const d = new Date(start); d.setDate(start.getDate() + i);
-                   const evs = fragmented.filter(e => this._activeCalendars.includes(e.origin) && e.displayDate === d.toDateString() && (e.isAllDay || e.isFragment));
-                   return html`<div class="ad-col">${evs.map(e => html`<div class="ad-pill" style="background:${e.color}">${e.summary}</div>`)}</div>`;
-               })}
-           </div>
-       </div>
-       <div class="main-scroll-sync">
-           <div class="time-axis-fixed">${hours.map(h => html`<div class="time-mark">${h}:00</div>`)}</div>
-           <div class="columns-scroll-sync" style="--cols: ${daysCount}">
-             ${Array.from({length: daysCount}).map((_, i) => {
-               const d = new Date(start); d.setDate(start.getDate() + i);
-               const evs = fragmented.filter(e => this._activeCalendars.includes(e.origin) && e.displayDate === d.toDateString() && !e.isAllDay && !e.isFragment);
-               return html`
-                 <div class="day-col">
-                   <div class="hour-container">
-                     ${hours.map(() => html`<div class="hour-box"></div>`)}
-                     ${evs.map(e => html`<div class="time-ev ${this._isPast(e) ? 'is-past' : ''}" style="${this._getTimeStyles(e)} background:${e.color}" @click="${() => this._selectedEvent = e}">${e.summary}</div>`)}
+            <div class="header-right">
+              <div class="theme-switch" @click="${this._toggleTheme}" title="Toggle Theme">
+                   <div class="switch-knob">
+                      <ha-icon icon="${this._themeMode === 'dark' ? 'mdi:weather-night' : 'mdi:weather-sunny'}" style="--mdc-icon-size: 14px;"></ha-icon>
                    </div>
-                 </div>`;
-             })}
-           </div>
-       </div>
-     </div>`;
-}
-
-_renderAgenda() {
-const today = new Date();
-today.setHours(0, 0, 0, 0);
-const fragmented = this._fragmentEvents(this._events);
-const interleaved = fragmented
-.filter(e => this._activeCalendars.includes(e.origin))
-.filter(e => new Date(e.displayDate) >= today)
-.sort((a, b) => new Date(a.displayDate) - new Date(b.displayDate) || 
-new Date(a.start.dateTime || a.start.date) - new Date(b.start.dateTime || b.start.date));
-
-return html`
-     <div class="agenda-view">
-       ${interleaved.map(e => {
-         const isPastFragment = new Date(e.displayDate) < today;
-         return html`
-           <div class="agenda-row ${isPastFragment ? 'is-past' : ''}" @click="${() => this._selectedEvent = e}">
-             <div class="agenda-date"><span class="day">${new Date(e.displayDate).getDate()}</span><span class="mon">${new Date(e.displayDate).toLocaleString('default', {month:'short'})}</span></div>
-             <div class="agenda-card" style="border-left: 6px solid ${e.color}">
-               <div class="ag-title">${e.summary}</div>
-               <div class="ag-meta">${e.friendly_name} • ${e.isAllDay ? 'All Day' : new Date(e.start.dateTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
-             </div>
-           </div>`;
-       })}
-     </div>`;
-}
-
-_renderChoreDashboard() {
-if (!this.config.chores || !this.config.periods) return html`<div>No chores configured.</div>`;
-
-const now = new Date();
-const currentTime = now.getHours() * 60 + now.getMinutes();
-const currentUser = (this.hass.user) ? this.hass.user.name : null;
-const isAdmin = (this.hass.user) ? this.hass.user.is_admin : false;
-
-const activePeriod = this.config.periods.find(p => {
-const partsStart = p.start.split(':');
-const partsEnd = p.end.split(':');
-const startTotal = Number(partsStart[0]) * 60 + Number(partsStart[1]);
-const endTotal = Number(partsEnd[0]) * 60 + Number(partsEnd[1]);
-return currentTime >= startTotal && currentTime <= endTotal;
-});
-
-if (!activePeriod) return html`<div class="chore-lock-msg">No active chore period right now.</div>`;
-
-const visibleKids = this.config.chores.filter(kid => 
-isAdmin || !kid.assigned_user || kid.assigned_user === currentUser
-);
-
-return html`
-     <div class="chore-container">
-       <div class="period-announcer">Active: ${activePeriod.name}</div>
-       <div class="chore-grid-locked">
-         ${visibleKids.map((kid) => {
-           const tasks = (kid.items || []).filter(i => i.period === activePeriod.name);
-           if (tasks.length === 0) return html``;
-
-           return html`
-             <div class="kid-chore-card">
-               <div class="kid-banner" style="background-image: url('${kid.image}')">
-                 <h3>${kid.name}</h3>
-               </div>
-               <div class="kid-list">
-                 ${tasks.map(item => {
-                   const isDone = this._getTodoStatus(kid.todo_list, item.label);
-                   
-                   return html`
-                     <div class="kid-item ${isDone ? 'done' : ''}" 
-                          @click="${() => { if (!this._isScrolling) this._toggleTodo(kid.todo_list, item.label, isDone); }}"
-                          @touchstart="${() => { this._isScrolling = false; }}"
-                          @touchmove="${() => { this._isScrolling = true; }}">
-                       
-                       <ha-icon 
-                         .icon="${isDone ? 'mdi:check-circle' : 'mdi:circle-outline'}"
-                         class="chore-icon">
-                       </ha-icon>
-                       
-                       <span>${item.label}</span>
-                     </div>`;
-                 })}
-               </div>
-             </div>`;
-         })}
-       </div>
-     </div>`;
-}
-
-_renderModal() {
-return html`
-     <div class="modal-backdrop" @click="${() => this._selectedEvent = null}">
-       <div class="modal-body" @click="${e => e.stopPropagation()}">
-         <div class="modal-header" style="background: ${this._selectedEvent.color}"><h2>${this._selectedEvent.summary}</h2></div>
-         <div class="modal-content">
-           <p><strong>Time:</strong> ${new Date(this._selectedEvent.start.dateTime || this._selectedEvent.start.date).toLocaleString()}</p>
-           <p><strong>Calendar:</strong> ${this._selectedEvent.friendly_name}</p>
-           <hr><div .innerHTML="${this._sanitize(this._selectedEvent.description)}"></div>
-         </div>
-         <button class="close-btn" @click="${() => this._selectedEvent = null}">Close</button>
-       </div>
-     </div>`;
-}
-
-_renderAddModal() {
-  const now = new Date();
-  const today = now.toISOString().split('T')[0];
-  const currentTime = now.toTimeString().slice(0, 5);
-  const oneHourLater = new Date(now.getTime() + (60 * 60 * 1000)).toTimeString().slice(0, 5);
-
-  return html`
-    <div class="modal-backdrop" @click="${() => this._showAddModal = false}">
-      <div class="modal-body creation" @click="${e => e.stopPropagation()}">
-        <div class="modal-header" style="background: var(--accent)"><h2>New Family Event</h2></div>
-        <div class="modal-content">
-          <div class="form-grid">
-            <ha-textfield id="new_summary" label="Event Title" class="full-width"></ha-textfield>
-            
-            <div class="side-by-side">
-              <ha-textfield id="new_date_start" type="date" label="Start Date" .value="${today}"></ha-textfield>
-              <ha-textfield id="new_start_time" type="time" label="Start Time" .value="${currentTime}"></ha-textfield>
+              </div>
             </div>
+          </header>
 
-            <div class="side-by-side">
-              <ha-textfield id="new_date_end" type="date" label="End Date" .value="${today}"></ha-textfield>
-              <ha-textfield id="new_end_time" type="time" label="End Time" .value="${oneHourLater}"></ha-textfield>
-            </div>
+          <section class="content-body">
+            ${this._renderActiveModule()}
+          </section>
 
-            <ha-textfield id="new_location" label="Location" icon="mdi:map-marker" class="full-width"></ha-textfield>
-            
-            <ha-textarea id="new_description" label="Notes/Description" rows="3" class="full-width"></ha-textarea>
+          <!-- Floating Action Button -->
+          ${this._activeView === 'calendar' ? html`
+             <button class="fab" @click="${() => { this._showAddModal = true; this.requestUpdate(); }}">
+               <ha-icon icon="mdi:plus"></ha-icon>
+             </button>
+          ` : ''}
+        </main>
 
-            <ha-select id="new_calendar" label="Target Calendar" class="full-width">
-              ${(this.config.entities || []).filter(e => e.entity.startsWith('calendar')).map(ent => 
-                html`<mwc-list-item value="${ent.entity}">${ent.entity}</mwc-list-item>`
-              )}
-            </ha-select>
-          </div>
+        ${this._selectedEvent ? this._renderModal() : ''}
+        ${this._showAddModal ? this._renderAddModal() : ''}
+      </div>
+    `;
+  }
+
+  _switchView(viewId, isCustom = false) {
+    this._activeView = viewId;
+    this._menuOpen = false;
+    
+    // Trigger HA Input Select for external dashboard control
+    if (this.config.view_controller) {
+      const option = isCustom ? viewId : "Nightlight";
+      this.hass.callService('input_select', 'select_option', {
+        entity_id: this.config.view_controller,
+        option: option
+      });
+    }
+  }
+
+  _renderActiveModule() {
+    switch (this._activeView) {
+      case 'meals': return this._renderMealPlanner();
+      case 'shopping': return this._renderShoppingList();
+      case 'whiteboard': return this._renderWhiteboard();
+      case 'chores': return this._renderChoreDashboard();
+      case 'calendar': 
+         if (this._calendarMode === 'month') return this._renderMonthGrid();
+         if (this._calendarMode === 'agenda') return this._renderAgenda();
+         return this._renderTimeGrid(this._calendarMode === 'week' ? 7 : 1);
+      default: return html`<div class="placeholder-view">View: ${this._activeView} active</div>`;
+    }
+  }
+
+  _renderMealPlanner() {
+    const weeklyMealsSensor = this.hass.states['sensor.meal_planner_weekly_meals'];
+    const weeklyMealsDocs = weeklyMealsSensor && weeklyMealsSensor.attributes.documents ? weeklyMealsSensor.attributes.documents : [];
+    
+    const mealsByDate = {};
+    weeklyMealsDocs.forEach(doc => {
+      if (doc.fields && doc.fields.date && doc.fields.date.stringValue) {
+        mealsByDate[doc.fields.date.stringValue] = doc.fields;
+      }
+    });
+
+    const recipesSensor = this.hass.states['sensor.meal_planner_recipes'];
+    const recipesDocs = recipesSensor && recipesSensor.attributes.documents ? recipesSensor.attributes.documents : [];
+    const recipes = recipesDocs.map(doc => {
+      const fields = doc.fields || {};
+      return {
+        id: fields.id?.stringValue,
+        title: fields.title?.stringValue || "Unknown Recipe"
+      };
+    }).sort((a, b) => a.title.localeCompare(b.title));
+
+    // Generate current week (Monday to Sunday)
+    const today = new Date();
+    const dayOfWeek = today.getDay(); // 0 is Sunday, 1 is Monday
+    const diffToMonday = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+    const monday = new Date(today);
+    monday.setDate(diffToMonday);
+
+    const weekDays = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      weekDays.push(d);
+    }
+
+    return html`
+      <div class="meals-container">
+        ${weekDays.map(d => {
+          const dateStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+          const dayName = d.toLocaleDateString('default', { weekday: 'long' });
+          const isToday = d.toDateString() === today.toDateString();
+          const meal = mealsByDate[dateStr];
+          
+          let recipeTitle = "";
+          let macros = null;
+          if (meal && meal.recipe && meal.recipe.mapValue && meal.recipe.mapValue.fields) {
+             const rFields = meal.recipe.mapValue.fields;
+             recipeTitle = rFields.title?.stringValue || "";
+             if (rFields.macros && rFields.macros.mapValue && rFields.macros.mapValue.fields) {
+                macros = {
+                   cal: rFields.macros.mapValue.fields.calories?.integerValue || 0,
+                   pro: rFields.macros.mapValue.fields.protein?.integerValue || 0,
+                   carbs: rFields.macros.mapValue.fields.carbs?.integerValue || 0,
+                   fat: rFields.macros.mapValue.fields.fat?.integerValue || 0
+                };
+             }
+          }
+
+          return html`
+            <div class="meal-card ${isToday ? 'today' : ''}">
+              <div class="meal-header">
+                <span>${dayName}</span>
+                <span class="meal-date">${d.toLocaleDateString('default', { month: 'short', day: 'numeric' })}</span>
+              </div>
+              
+              <div class="meal-content">
+                <select class="meal-select" @change="${(e) => this._scheduleMeal(dateStr, e.target.value)}">
+                  <option value="">No meal planned</option>
+                  ${recipes.map(r => html`
+                    <option value="${r.id}" ?selected="${meal && meal.recipeId?.stringValue === r.id}">${r.title}</option>
+                  `)}
+                </select>
+                
+                ${macros ? html`
+                  <div class="meal-macros">
+                    <span class="macro cal">${macros.cal} kcal</span>
+                    <span class="macro pro">${macros.pro}g P</span>
+                    <span class="macro carbs">${macros.carbs}g C</span>
+                    <span class="macro fat">${macros.fat}g F</span>
+                  </div>
+                ` : ''}
+              </div>
+            </div>`;
+        })}
+      </div>`;
+  }
+
+  async _scheduleMeal(dateStr, recipeId) {
+    if (!recipeId) {
+      await this.hass.callService('rest_command', 'meal_planner_delete_weekly_meal', { id: dateStr });
+    } else {
+      const recipesSensor = this.hass.states['sensor.meal_planner_recipes'];
+      const recipesDocs = recipesSensor && recipesSensor.attributes.documents ? recipesSensor.attributes.documents : [];
+      const recipeDoc = recipesDocs.find(doc => doc.fields?.id?.stringValue === recipeId);
+      
+      if (recipeDoc) {
+        const fields = recipeDoc.fields;
+        await this.hass.callService('rest_command', 'meal_planner_upsert_weekly_meal', {
+          id: dateStr,
+          date: dateStr,
+          recipe_id: recipeId,
+          recipe_title: fields.title?.stringValue || "",
+          prep_time: fields.prepTime?.integerValue || 0,
+          cook_time: fields.cookTime?.integerValue || 0,
+          servings: fields.servings?.integerValue || 2,
+          calories: fields.macros?.mapValue?.fields?.calories?.integerValue || 0,
+          protein: fields.macros?.mapValue?.fields?.protein?.integerValue || 0,
+          carbs: fields.macros?.mapValue?.fields?.carbs?.integerValue || 0,
+          fat: fields.macros?.mapValue?.fields?.fat?.integerValue || 0
+        });
+      }
+    }
+    
+    setTimeout(() => {
+      this.hass.callService('homeassistant', 'update_entity', { entity_id: 'sensor.meal_planner_weekly_meals' });
+    }, 1000);
+  }
+
+  _renderShoppingList() {
+    const shoppingSensor = this.hass.states['sensor.meal_planner_shopping_list'];
+    const docs = shoppingSensor && shoppingSensor.attributes.documents ? shoppingSensor.attributes.documents : [];
+    
+    const items = docs.map(doc => {
+      const fields = doc.fields || {};
+      return {
+        id: fields.id?.stringValue,
+        name: fields.name?.stringValue || "Unknown",
+        amount: fields.amount?.doubleValue || fields.amount?.integerValue || 1,
+        unit: fields.unit?.stringValue || "",
+        checked: fields.checked?.booleanValue || false
+      };
+    });
+
+    // Sort: unchecked first, then alphabetical
+    items.sort((a, b) => {
+      if (a.checked === b.checked) return a.name.localeCompare(b.name);
+      return a.checked ? 1 : -1;
+    });
+
+    return html`
+      <div class="shopping-container">
+        <div class="shopping-add">
+          <input type="text" id="new_shopping_item" placeholder="Add item..." @keydown="${(e) => e.key === 'Enter' && this._addShoppingItem(e.target.value)}">
+          <button class="btn-primary" @click="${() => {
+            const input = this.shadowRoot.getElementById('new_shopping_item');
+            this._addShoppingItem(input.value);
+            input.value = '';
+          }}">Add</button>
         </div>
-        <div class="modal-actions">
-          <mwc-button @click="${() => { this._showAddModal = false; this.requestUpdate(); }}">Cancel</mwc-button>
-          <mwc-button raised @click="${this._submitEvent}">Create Event</mwc-button>
+        <div class="shopping-list">
+          ${items.map(item => html`
+            <div class="shopping-item ${item.checked ? 'checked' : ''}">
+              <div class="shopping-item-left" @click="${() => this._toggleShoppingItem(item)}">
+                <ha-icon icon="${item.checked ? 'mdi:checkbox-marked-circle' : 'mdi:checkbox-blank-circle-outline'}"></ha-icon>
+                <span class="shopping-item-name">${item.name}</span>
+                ${item.amount || item.unit ? html`<span class="shopping-item-meta">${item.amount} ${item.unit}</span>` : ''}
+              </div>
+              <button class="shopping-item-delete" @click="${() => this._deleteShoppingItem(item.id)}">
+                <ha-icon icon="mdi:delete-outline"></ha-icon>
+              </button>
+            </div>
+          `)}
+          ${items.length === 0 ? html`<div class="empty-state">Shopping list is empty.</div>` : ''}
         </div>
       </div>
-    </div>`;
-}
+    `;
+  }
 
-static get styles() {
-return css`
-   /* --- Layout & Hybrid Visibility --- */
-   :host { display: block; width: 100%; transition: width 0.3s ease; --accent: #7b61ff; --bg: var(--primary-background-color); --card: var(--card-background-color); --text: var(--primary-text-color); --secondary-text: var(--secondary-text-color); --border: var(--divider-color); --gold: #ffd700; --ha-header: 56px; }
-   
-   :host([mode="section"]) { width: 100% !important; position: relative; z-index: 100; pointer-events: none; transition: width 0.3s ease; background: transparent !important;}
-   :host([mode="section"]) .nightlight-hub { grid-template-columns: 80px 1fr !important; transition: width 0.3s ease; background: transparent;}
-   :host([mode="section"]) .side-rail { pointer-events: auto; border-right: none !important; box-shadow: none !important; background: var(--card);}
-   :host([mode="section"]) .side-rail:not(.open) { display: flex !important; }
-   :host([mode="section"]) .main-stage { display: none !important; }
-   :host([mode="section"]) .hamburger-menu-fixed { display: none; }
-   :host([mode="section"]) .menu-close-btn { display: none !important; }
-   
-   :host([mode="core"]) { width: 100% !important; position: relative; }
-   :host([mode="core"]) .main-stage { display: flex !important; pointer-events: auto; }
-   :host([mode="core"]) .side-rail { display: flex !important; width: 80px; background: var(--card); }
-   :host([mode="core"]) .menu-close-btn, :host([mode="core"]) .hamburger-menu-fixed { display: none !important; }
-   
-   .nightlight-hub.dark { --bg: #121212; --card: #1e1e1e; --text: #efefef; --border: #333; }
-   .nightlight-hub { display: grid; grid-template-columns: 80px 1fr; height: calc(100vh - var(--ha-header, 56px)); background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
+  async _addShoppingItem(name) {
+    if (!name || !name.trim()) return;
+    const id = 'item-' + Date.now();
+    await this.hass.callService('rest_command', 'meal_planner_upsert_shopping_item', {
+      id: id,
+      name: name.trim(),
+      amount: 1,
+      unit: "",
+      checked: false
+    });
+    setTimeout(() => {
+      this.hass.callService('homeassistant', 'update_entity', { entity_id: 'sensor.meal_planner_shopping_list' });
+    }, 1000);
+  }
 
-   /* --- Sidebar & Navigation --- */
-   .logo-link { color: var(--accent); text-decoration: none; cursor: pointer; display: block; }
-   .logo-area { color: var(--accent); margin-bottom: 20px; width: 30px; }
-   .nav-btn { background: none; border: none; padding: 15px 0; color: #bbb; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; font-weight: bold; width: 100%; position: relative; }
-   .nav-btn.active { color: var(--accent); border-right: 3px solid var(--accent); background: rgba(123, 97, 255, 0.05); }
-   .nav-btn ha-icon { --mdc-icon-size: 22px; }
-   .hamburger-menu { display: none; margin-right: 10px; --mdc-icon-button-size: 40px; }
-   .menu-close-btn { display: inline-block; background: none; border: none; color: var(--text); font-size: 1.5rem; position: absolute; top: 15px; right: 15px; z-index: 1001; }
-   .hamburger-menu-fixed { display: none; position: absolute; top: 10px; left: 20px; z-index: 200; color: var(--text); --mdc-icon-button-size: 48px; background: rgba(0, 0, 0, 0.3); border-radius: 50%; pointer-events: auto !important; }
-   
-   @media (max-width: 768px) {
-       .hamburger-menu-fixed { display: inline-block; }
-       .title-with-fixed-menu { margin-left: 45px !important; }
-       .side-rail.open { pointer-events: auto !important; left: 0; display: flex !important; background: var(--card) !important; width: 80px !important; top: var(--ha-header, 56px); position: fixed; bottom: 0;}
-       .side-rail.open .menu-close-btn { display: block !important; }
-       .main-stage .hamburger-menu { display: inline-block !important; } 
-       .top-bar h1 { margin-left: 45px !important; }
-       .side-rail { display: none; }
-       
-       :host([mode="section"]) .hamburger-menu-fixed { display: inline-block !important; pointer-events: auto !important; }
-       :host([mode="section"]) .side-rail:not(.open) { display: none !important; }
-       :host([mode="section"]) .nightlight-hub { grid-template-columns: 0px 1fr !important; background: transparent !important; display: flex; }
-       :host([mode="core"]) .side-rail:not(.open) { display: none !important; }
-       :host([mode="core"]) .hamburger-menu, :host([mode="core"]) .hamburger-menu-fixed { display: inline-block !important; visibility: visible !important; opacity: 1 !important; } 
-       :host([mode="core"]) .nightlight-hub { grid-template-columns: 1fr !important; }
-   }
-   
-   .side-rail { background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 15px 0; z-index: 20; }
-   .side-rail.open { background: var(--card) !important; pointer-events: auto !important; left: 0; display: flex !important; width: 80px; position: fixed; top: var(--ha-header, 56px); bottom: 0; z-index: 2000; box-shadow: 5px 0 15px rgba(0,0,0,0.3); }
-   .side-rail.open .nav-btn { opacity: 1 !important; visibility: visible !important; }
+  async _toggleShoppingItem(item) {
+    await this.hass.callService('rest_command', 'meal_planner_upsert_shopping_item', {
+      id: item.id,
+      name: item.name,
+      amount: item.amount,
+      unit: item.unit,
+      checked: !item.checked
+    });
+    setTimeout(() => {
+      this.hass.callService('homeassistant', 'update_entity', { entity_id: 'sensor.meal_planner_shopping_list' });
+    }, 1000);
+  }
 
-   /* --- Main Header & Stage --- */
-   .main-stage { padding: 15px; flex-direction: column; height: 100%; box-sizing: border-box; overflow: hidden; display: flex; }
-   .top-bar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; flex-shrink: 0; z-index: 10; }
-   .top-bar h1 { font-size: 1.8rem; font-weight: 800; margin: 0; letter-spacing: -1px; white-space: nowrap; }
-   .meta-row { display: flex; align-items: center; gap: 10px; margin-top: 5px; }
-   .clock { font-size: 1rem; font-weight: 700; color: #888; }
-   .nav-arrows button { background: var(--card); border: 1px solid var(--border); border-radius: 50%; width: 32px; height: 32px; cursor: pointer; color: var(--text); }
-   .right-actions { display: flex; align-items: center; gap: 15px; }
-   .view-switcher { background: rgba(0,0,0,0.05); padding: 3px; border-radius: 10px; display: flex; white-space: nowrap; }
-   .view-switcher button { border: none; background: transparent; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: 800; color: #666; font-size: 0.65rem; }
-   .view-switcher button.active { background: var(--card); color: var(--text); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-   .persona-filters { display: flex; gap: 6px; }
-   .persona { width: 32px; height: 32px; border-radius: 50%; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 900; cursor: pointer; overflow: hidden; transition: all 0.3s ease; }
-   .persona img { width: 100%; height: 100%; object-fit: cover; }
-   .persona.inactive { opacity: 0.2 !important; filter: grayscale(1) !important; background: #444 !important; }
-   .today-btn { background: var(--accent); color: #fff; border: none; padding: 6px 14px; border-radius: 10px; font-weight: 800; cursor: pointer; white-space: nowrap; font-size: 0.75rem; }
+  async _deleteShoppingItem(id) {
+    await this.hass.callService('rest_command', 'meal_planner_delete_shopping_item', {
+      id: id
+    });
+    setTimeout(() => {
+      this.hass.callService('homeassistant', 'update_entity', { entity_id: 'sensor.meal_planner_shopping_list' });
+    }, 1000);
+  }
 
-   /* --- Calendar Views (Monthly, Weekly, Agenda) --- */
-   .content-area { flex-grow: 1; height: 0; overflow-y: auto; display: flex; flex-direction: column; position: relative; z-index: 1; }
-   .month-wrapper { height: 100%; display: flex; flex-direction: column; }
-   .labels-row { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; color: #bbb; font-weight: 800; font-size: 0.7rem; padding-bottom: 8px; }
-   .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(6, 1fr); gap: 6px; flex-grow: 1; height: 0; }
-   .day-cell { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 8px; overflow: hidden; cursor: pointer; }
-   .day-cell.today { border-color: var(--accent); border-width: 2px; }
-   .day-num { font-weight: 900; font-size: 1rem; }
-   .ev-pill { margin-top: 2px; padding: 3px; border-radius: 4px; color: #fff; font-size: 0.6rem; font-weight: 800; white-space: nowrap; overflow: hidden; }
-   .is-past { opacity: 0.3 !important; }
-   .time-grid-root { display: flex; flex-direction: column; height: 100%; border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: var(--card); }
-   .header-row-locked { display: flex; border-bottom: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
-   .axis-placeholder { width: 50px; border-right: 1px solid var(--border); }
-   .date-grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; height: 40px; }
-   .header-cell { display: flex; align-items: center; justify-content: center; font-weight: 900; color: var(--text); border-right: 1px solid var(--border); font-size: 0.7rem; }
-   .all-day-sync-row { display: flex; border-bottom: 2px solid var(--border); background: var(--bg); flex-shrink: 0; min-height: 20px; }
-   .axis-label-blank { width: 50px; border-right: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.5rem; font-weight: 900; color: #bbb; text-transform: uppercase; }
-   .ad-grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; padding: 2px; gap: 2px; }
-   .ad-col { min-height: 20px; display: flex; flex-direction: column; gap: 2px; }
-   .ad-pill { padding: 1px 4px; border-radius: 3px; color: #fff; font-size: 0.5rem; font-weight: 800; white-space: nowrap; overflow: hidden; height: 14px; line-height: 14px; }
-   .main-scroll-sync { display: flex; flex-grow: 1; overflow-y: auto; overflow-x: hidden; }
-   .time-axis-fixed { width: 50px; border-right: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
-   .time-mark { height: 80px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; color: #888; font-weight: 700; }
-   .columns-scroll-sync { display: grid; grid-template-columns: repeat(var(--cols), 1fr); flex-grow: 1; }
-   .day-col { border-right: 1px solid var(--border); position: relative; }
-   .hour-container { position: relative; height: 1920px; }
-   .hour-box { height: 80px; border-bottom: 1px dotted var(--border); }
-   .time-ev { position: absolute; left: 2px; right: 2px; padding: 6px; border-radius: 8px; color: #fff; font-size: 0.75rem; font-weight: 800; cursor: pointer; z-index: 2; }
-   .agenda-view { height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
-   .agenda-row { display: flex; gap: 12px; align-items: center; background: var(--card); padding: 10px; border-radius: 12px; border: 1px solid var(--border); cursor: pointer; }
-   .agenda-date { display: flex; flex-direction: column; align-items: center; width: 45px; }
-   .agenda-date .day { font-size: 1.4rem; font-weight: 900; line-height: 1; }
-   .agenda-date .mon { font-size: 0.65rem; font-weight: 800; text-transform: uppercase; color: var(--accent); }
-   .agenda-card { flex-grow: 1; padding: 5px 10px; }
-   .ag-title { font-size: 1rem; font-weight: 800; }
-   .ag-meta { color: #888; font-weight: 600; font-size: 0.75rem; }
+  _renderWhiteboard() {
+    const entityId = this.config.notes_entity;
+    const items = this._todoItems || [];
 
-   /* --- Chores Dashboard --- */
-   .chore-container { display: flex; flex-direction: column; height: 100%; position: relative; z-index: 5; }
-   .chore-grid-locked { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; overflow-y: auto; padding-bottom: 10px; }
-   .kid-chore-card { background: var(--card); border-radius: 20px; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.04); position: relative; }
-   .kid-banner { height: 100px; background-size: cover; background-position: center; display: flex; align-items: flex-end; padding: 15px; color: #fff; position: relative; }
-   .period-announcer { text-align: right; font-weight: 800; text-transform: uppercase; color: var(--accent); padding: 4px 12px; background: rgba(123, 97, 255, 0.08); border-radius: 6px; margin-bottom: 8px; font-size: 0.6rem; align-self: flex-end; }
-   .kid-list { padding: 10px; display: flex; flex-direction: column; gap: 6px; }
-   .kid-item { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; cursor: pointer; color: var(--text); font-weight: 800; background: rgba(123, 97, 255, 0.03); transition: all 0.2s ease; }
-   .kid-item.done { background: rgba(52, 199, 89, 0.1) !important; border: 1px solid rgba(52, 199, 89, 0.3); opacity: 0.8; }
-   .kid-item.done span { text-decoration: line-through !important; color: var(--secondary-text); }
-   .chore-lock-msg { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--secondary-text); font-size: 1.2rem; font-weight: 700; }
-   .warning-banner { background: #ff5252; color: white; padding: 10px; border-radius: 8px; text-align: center; font-weight: 900; margin-bottom: 10px; animation: pulse 2s infinite; }
+    return html`
+      <div class="whiteboard-board">
+        <div class="whiteboard-tools">
+          <button class="btn-primary" @click="${() => this._showAddNotePrompt(entityId)}">
+            <ha-icon icon="mdi:sticker-plus-outline"></ha-icon> Add Note
+          </button>
+        </div>
+        <div class="notes-grid">
+          ${items.length === 0 ? html`<div class="empty-state">No notes posted.</div>` : 
+            items.map(item => {
+               const parts = item.summary.split('--');
+               const formatted = parts.map((l, i) => i === 0 ? l : html`<br>• ${l.trim()}`);
+               return html`
+                 <div class="note-card">
+                   <button class="note-close" @click="${() => this._deleteNote(entityId, item.uid || item.summary)}">✕</button>
+                   <div class="note-body">${formatted}</div>
+                 </div>
+               `;
+            })
+          }
+        </div>
+      </div>`;
+  }
 
-   /* --- Notes & Post-it Grid --- */
-   .whiteboard-grid-container { height: 100%; display: flex; flex-direction: column; padding: 10px; }
-   .whiteboard-header { display: flex; justify-content: space-between; align-items: center; font-size: 1.6rem; font-weight: 900; margin-bottom: 15px; color: var(--text); }
-   .post-it-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); grid-auto-rows: 200px; gap: 20px; overflow-y: auto; padding: 10px; flex-grow: 1; }
-   .post-it { background: #fff9c4; color: #000 !important; padding: 20px; min-height: 150px; border-radius: 2px; box-shadow: 3px 3px 10px rgba(0,0,0,0.1); position: relative; font-family: 'Comic Sans MS', cursive, sans-serif; font-weight: 700; display: flex; align-items: center; justify-content: center; transform: rotate(-1.5deg); }
-   .note-content { color: #000 !important; font-size: 1.2rem; line-height: 1.3; white-space: pre-wrap; text-align: left;}
-   .post-it:nth-child(even) { transform: rotate(1.2deg); background: #e1f5fe; }
-   .delete-note { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.05); border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; color: #888; }
-   .add-note-inline { background: var(--accent); color: white; border: none; padding: 8px 16px; border-radius: 12px; font-weight: 800; cursor: pointer; }
+  async _showAddNotePrompt(entityId) {
+    const note = prompt("Type your note:");
+    if (note) {
+      await this.hass.callService('todo', 'add_item', { entity_id: entityId, item: note });
+      await this._fetchNotes(entityId);
+    }
+  }
 
-   /* --- Meal Planner & Sub-Modules --- */
-   .meal-grid-view { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; height: 100%; overflow-y: auto; padding: 5px; }
-   .meal-card-item { background: var(--card); border-radius: 16px; border: 1px solid var(--border); padding: 15px; display: flex; flex-direction: column; }
-   .meal-day-label { font-size: 1.1rem; font-weight: 900; color: var(--accent); margin-bottom: 8px; }
-   .meal-card-item textarea { border: none; resize: none; font-size: 0.9rem; background: transparent; color: var(--text); outline: none; min-height: 100px; }
+  async _deleteNote(entityId, identifier) {
+    if (confirm("Archive this note?")) {
+       await this.hass.callService('todo', 'update_item', { 
+         entity_id: entityId, 
+         item: identifier, 
+         status: 'completed' 
+       });
+       await this._fetchNotes(entityId);
+    }
+  }
 
-   /* --- Modal & Editor Styles --- */
-   .alert-dot { position: absolute; top: 12px; right: 20px; width: 10px; height: 10px; background: #ff5252; border-radius: 50%; border: 2px solid var(--card); }
-   .fab { position: fixed; bottom: 25px; right: 25px; width: 42px; height: 42px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 1.8rem; z-index: 100; cursor: pointer; }
-   .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 3000; backdrop-filter: blur(10px); }
-   .modal-body.creation { background: var(--card); width: 90%; max-width: 450px; border-radius: 20px; overflow: hidden; box-shadow: 0 15px 50px rgba(0,0,0,0.3); }
-   .modal-body { background: var(--card); width: 90%; max-width: 400px; border-radius: 20px; overflow: hidden; box-shadow: 0 15px 50px rgba(0,0,0,0.3); }
-   .modal-header { padding: 20px; color: #fff; text-align: left; font-size: 1.5rem; font-weight: 800; }
-   .modal-content { padding: 20px; }
-   .form-grid { display: flex; flex-direction: column; gap: 15px; }
-   .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-   .full-width { width: 100%; }
-   .modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 15px 20px; border-top: 1px solid var(--border); background: rgba(0,0,0,0.05); }
-   ha-textfield, ha-select { --mdc-shape-small: 8px; }
-   .editor-shell { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-   .editor-shell .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
-   .editor-shell .kid-box { border: 1px solid var(--border); padding: 10px; border-radius: 8px; margin-bottom: 10px; }
-   ha-expansion-panel { background: var(--secondary-background-color); border-radius: 8px; margin-bottom: 10px; }
-   ha-textfield, ha-entity-picker { width: 100%; margin-top: 8px; }
-   
-`;
-}
-}
-// --- CARD EDITOR CLASS (100% RESTORED) ---
+  _renderChoreDashboard() {
+    if (!this.config.chores || !this.config.periods) return html`<div class="empty-state">Chores not configured.</div>`;
 
-class NightlightCardEditor extends LitElement {
-static get properties() { return { hass: {}, _config: {} }; }
+    const now = new Date();
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+    const currentUser = this.hass.user ? this.hass.user.name : null;
+    const isAdmin = this.hass.user ? this.hass.user.is_admin : false;
 
-setConfig(config) {
-this._config = config;
-const loadHAComponents = async () => {
-if (!customElements.get("ha-entity-picker")) {
-const cardHelpers = await window.loadCardHelpers();
-await cardHelpers.createCardElement({ type: "entities" });
-}
-this.requestUpdate();
-};
-loadHAComponents();
-}
+    // Determine Active Period based on config.periods array order
+    let activePeriodIndex = -1;
+    const activePeriod = this.config.periods.find((p, index) => {
+      const [sh, sm] = p.start.split(':').map(Number);
+      const [eh, em] = p.end.split(':').map(Number);
+      const start = sh * 60 + sm;
+      const end = eh * 60 + em;
+      if (currentMins >= start && currentMins <= end) {
+          activePeriodIndex = index;
+          return true;
+      }
+      return false;
+    });
 
-_updateConfig(changes) {
-this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, ...changes } }, bubbles: true, composed: true }));
-}
+    if (!activePeriod) return html`
+      <div class="chore-center-message">
+        <ha-icon icon="mdi:sleep" style="font-size: 64px; opacity: 0.5;"></ha-icon>
+        <h2>No Active Chore Period</h2>
+        <p>Check back later.</p>
+      </div>`;
 
-_valueChanged(ev) {
-if (!this._config || !this.hass) return;
-const target = ev.target;
-const field = target.configValue || 'title';
-const value = target.value;
-this._updateConfig({ [field]: value });
-}
+    // Map 1st period -> Prefix "1.", 2nd -> "2.", etc.
+    const targetPrefix = activePeriodIndex + 1; 
 
-_entitiesChanged(ev) {
-const newEntityList = ev.detail.value;
-const current = this._config.entities || [];
-const entities = newEntityList.map(entId => {
-const existing = current.find(e => e.entity === entId);
-return existing ? { ...existing } : { entity: entId, color: '#7b61ff', picture: '' };
-});
-this._updateConfig({ entities });
-}
+    const visibleKids = this.config.chores.filter(kid => 
+      isAdmin || !kid.assigned_user || kid.assigned_user === currentUser
+    );
 
-_removeEntity(idx) {
-const entities = [...(this._config.entities || [])];
-entities.splice(idx, 1);
-this._updateConfig({ entities });
-}
-
-_entityPropertyChanged(idx, prop, value) {
-const entities = JSON.parse(JSON.stringify(this._config.entities || []));
-if (!entities[idx]) return;
-entities[idx][prop] = value;
-this._updateConfig({ entities });
-}
-
-_moveEntity(idx, direction) {
-const entities = [...(this._config.entities || [])];
-const newIdx = idx + direction;
-if (newIdx < 0 || newIdx >= entities.length) return;
-[entities[idx], entities[newIdx]] = [entities[newIdx], entities[idx]];
-this._updateConfig({ entities });
-}
-
-_addPeriod() {
-const periods = [...(this._config.periods || [])];
-periods.push({ name: "Morning", start: "06:00", end: "09:00" });
-this._updateConfig({ periods });
-}
-
-_removePeriod(idx) {
-const periods = [...(this._config.periods || [])];
-periods.splice(idx, 1);
-this._updateConfig({ periods });
-}
-
-_periodChanged(idx, field, value) {
-const periods = JSON.parse(JSON.stringify(this._config.periods || []));
-periods[idx][field] = value;
-this._updateConfig({ periods });
-}
-
-_addNavLink() {
-const navigation = [...(this._config.navigation || [])];
-navigation.push({ name: "New Link", icon: "mdi:link", path: "/dashboard/0" });
-this._updateConfig({ navigation });
-}
-
-_removeNavLink(idx) {
-const navigation = [...(this._config.navigation || [])];
-navigation.splice(idx, 1);
-this._updateConfig({ navigation });
-}
-
-_navPropChanged(idx, prop, value) {
-const navigation = JSON.parse(JSON.stringify(this._config.navigation || []));
-navigation[idx][prop] = value;
-this._updateConfig({ navigation });
-}
-
-_addKid() {
-const chores = [...(this._config.chores || [])];
-chores.push({ name: "New Child", image: "", todo_list: "", assigned_user: "", items: [] });
-this._updateConfig({ chores });
-}
-
-_removeKid(idx) {
-const chores = [...(this._config.chores || [])];
-chores.splice(idx, 1);
-this._updateConfig({ chores });
-}
-
-_kidPropertyChanged(idx, prop, value) {
-const chores = JSON.parse(JSON.stringify(this._config.chores || []));
-chores[idx][prop] = value;
-this._updateConfig({ chores });
-}
-
-_addChoreToPeriod(kIdx, periodName) {
-const chores = JSON.parse(JSON.stringify(this._config.chores || []));
-if (!chores[kIdx].items) chores[kIdx].items = [];
-chores[kIdx].items.push({ label: "New Task", period: periodName });
-this._updateConfig({ chores });
-}
-
-_removeChore(kIdx, iIdx) {
-const chores = JSON.parse(JSON.stringify(this._config.chores || []));
-chores[kIdx].items.splice(iIdx, 1);
-this._updateConfig({ chores });
-}
-
-_choreItemChanged(kIdx, iIdx, prop, value) {
-const chores = JSON.parse(JSON.stringify(this._config.chores || []));
-chores[kIdx].items[iIdx][prop] = value;
-this._updateConfig({ chores });
-}
-
-render() {
-if (!this.hass || !this._config) return html``;
-const periods = this._config.periods || [];
-
-return html`
-     <div class="editor-shell">
-       <ha-expansion-panel header="Hub Branding" outlined expanded>
-         <div class="panel-content">
-           <ha-textfield label="Title" .value="${this._config.title}" @input="${e => this._updateConfig({title: e.target.value})}"></ha-textfield>
-           <ha-textfield label="Logo URL Link" .value="${this._config.logo_url}" @input="${e => this._updateConfig({logo_url: e.target.value})}"></ha-textfield>
-           <ha-entity-picker label="Controller (input_select)" .hass="${this.hass}" .value="${this._config.view_controller}" .includeDomains="${['input_select']}" @value-changed="${e => this._updateConfig({view_controller: e.detail.value})}"></ha-entity-picker>
-           <ha-select label="Theme" .value="${this._config.theme}" .configValue="${'theme'}" @selected="${this._valueChanged}">
-             <mwc-list-item value="light">Skylight Light</mwc-list-item>
-             <mwc-list-item value="dark">Nightlight Dark</mwc-list-item>
-           </ha-select>
-         </div>
-       </ha-expansion-panel>
-
-       <ha-expansion-panel header="Chore Periods" outlined>
-         <div class="panel-content">
-           <div class="period-header">
-             <div>Start</div><div>End</div><div>Name</div><div></div>
-           </div>
-           ${periods.map((p, idx) => html`
-             <div class="period-row">
-               <ha-textfield placeholder="00:00" .value="${p.start}" @input="${e => this._periodChanged(idx, 'start', e.target.value)}"></ha-textfield>
-               <ha-textfield placeholder="00:00" .value="${p.end}" @input="${e => this._periodChanged(idx, 'end', e.target.value)}"></ha-textfield>
-               <ha-textfield placeholder="Name" .value="${p.name}" @input="${e => this._periodChanged(idx, 'name', e.target.value)}"></ha-textfield>
-               <ha-icon-button @click="${() => this._removePeriod(idx)}">
-                 <ha-icon icon="mdi:close"></ha-icon>
-               </ha-icon-button>
-             </div>`)}
-           <mwc-button class="mush-btn" @click="${this._addPeriod}">+ ADD TIME PERIOD</mwc-button>
-         </div>
-       </ha-expansion-panel>
-
-       <ha-expansion-panel header="Family Profiles" outlined expanded>
-         <div class="panel-content">
-           ${(this._config.chores || []).map((kid, kIdx) => html`
-             <div class="kid-box">
-               <div class="kid-header">
-                 <ha-textfield label="Child Name" .value="${kid.name}" @input="${e => this._kidPropertyChanged(kIdx, 'name', e.target.value)}"></ha-textfield>
-                 <ha-icon-button @click="${() => this._removeKid(kIdx)}">
-                   <ha-icon icon="mdi:account-remove"></ha-icon>
-                 </ha-icon-button>
-               </div>
-
-               <div class="mapping-grid">
-                 <ha-entity-picker 
-                   label="Linked To-do List"
-                   .hass="${this.hass}"
-                   .value="${kid.todo_list}"
-                   .includeDomains="${['todo']}"
-                   @value-changed="${e => this._kidPropertyChanged(kIdx, 'todo_list', e.detail.value)}">
-                 </ha-entity-picker>
-
-                 <ha-textfield 
-                   label="Assigned HA User" 
-                   .value="${kid.assigned_user || ''}"
-                   @input="${e => this._kidPropertyChanged(kIdx, 'assigned_user', e.target.value)}">
-                 </ha-textfield>
-               </div>
-
-               <ha-textfield label="Banner Image URL" .value="${kid.image || ''}" @input="${e => this._kidPropertyChanged(kIdx, 'image', e.target.value)}"></ha-textfield>
-
-               ${periods.map(p => html`
-                 <div class="period-group">
-                   <div class="period-group-title">
-                     <span>${p.name} Tasks</span>
-                     <ha-icon-button @click="${() => this._addChoreToPeriod(kIdx, p.name)}">
-                       <ha-icon icon="mdi:plus-circle"></ha-icon>
-                     </ha-icon-button>
+    return html`
+      <div class="chore-dashboard">
+        <div class="period-badge">Current: ${activePeriod.name}</div>
+        <div class="chore-grid">
+          ${visibleKids.map(kid => {
+             // Filter tasks matching kid's list ID AND current period prefix (1., 2., 3.)
+             const tasks = (this._todoItems || []).filter(i => 
+                 i.list_id === kid.todo_list && 
+                 (i.period_index === targetPrefix)
+             );
+             
+             if (tasks.length === 0) return '';
+             
+             return html`
+               <div class="kid-card">
+                 <div class="kid-hero" style="background-image: url('${kid.image || ''}')">
+                   <div class="hero-overlay">
+                     <h3>${kid.name}</h3>
                    </div>
-                   ${(kid.items || []).filter(i => i.period === p.name).map((item) => {
-                     const originalIdx = kid.items.indexOf(item);
-                     return html`
-                       <div class="chore-row">
-                         <ha-textfield label="Task Label" .value="${item.label}" @input="${e => this._choreItemChanged(kIdx, originalIdx, 'label', e.target.value)}"></ha-textfield>
-                         <ha-icon-button @click="${() => this._removeChore(kIdx, originalIdx)}">
-                           <ha-icon icon="mdi:close"></ha-icon>
-                         </ha-icon-button>
-                       </div>`;
+                 </div>
+                 <div class="task-list">
+                   ${tasks.map(item => {
+                      const isDone = item.status === 'completed';
+                      return html`
+                        <div class="task-row ${isDone ? 'completed' : ''}"
+                             @click="${() => this._toggleTodo(item)}">
+                          <ha-icon icon="${isDone ? 'mdi:checkbox-marked-circle' : 'mdi:checkbox-blank-circle-outline'}"></ha-icon>
+                          <span>${item.label}</span>
+                        </div>
+                      `;
                    })}
-                 </div>`)}
-             </div>`)}
-           <mwc-button raised class="mush-btn" @click="${this._addKid}">+ ADD CHILD PROFILE</mwc-button>
-         </div>
-       </ha-expansion-panel>
-
-       <ha-expansion-panel header="Sidebar Navigation" outlined>
-         <div class="panel-content">
-           ${(this._config.navigation || []).map((nav, idx) => html`
-             <div class="kid-box" style="margin-bottom: 10px;">
-               <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
-                 <ha-textfield label="Button Name" .value="${nav.name}" style="flex-grow: 1;"
-                   @input="${e => this._navPropChanged(idx, 'name', e.target.value)}"></ha-textfield>
-                 <ha-icon-button @click="${() => this._removeNavLink(idx)}">
-                   <ha-icon icon="mdi:delete"></ha-icon>
-                 </ha-icon-button>
-               </div>
-               
-               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-                 <ha-textfield label="Icon (mdi:icon)" .value="${nav.icon}" 
-                   @input="${e => this._navPropChanged(idx, 'icon', e.target.value)}"></ha-textfield>
-                 <ha-textfield label="URL Path" .value="${nav.path}" 
-                   @input="${e => this._navPropChanged(idx, 'path', e.target.value)}"></ha-textfield>
-               </div>
-             </div>
-           `)}
-           <mwc-button raised class="mush-btn" @click="${this._addNavLink}">+ ADD NAV LINK</mwc-button>
-         </div>
-       </ha-expansion-panel>
-
-       <ha-expansion-panel header="Persona Styling" outlined>
-         <div class="panel-content">
-           <ha-entities-picker 
-             .hass="${this.hass}" 
-             .includeDomains="${['calendar']}" 
-             .value="${this._config.entities ? this._config.entities.map(e => e.entity) : []}" 
-             @value-changed="${this._entitiesChanged}">
-           </ha-entities-picker>
-
-           ${(this._config.entities || []).map((ent, idx) => html`
-             <div class="persona-row" style="border: 1px solid var(--divider-color); padding: 10px; margin-top: 10px; border-radius: 8px;">
-               <div class="persona-header" style="display: flex; justify-content: space-between; align-items: center;">
-                 <strong style="font-size: 0.8rem;">${ent.entity}</strong>
-                 <div style="display: flex;">
-                   <ha-icon-button @click="${() => this._moveEntity(idx, -1)}" ?disabled="${idx === 0}">
-                     <ha-icon icon="mdi:arrow-up"></ha-icon>
-                   </ha-icon-button>
-                   <ha-icon-button @click="${() => this._moveEntity(idx, 1)}" ?disabled="${idx === (this._config.entities.length - 1)}">
-                     <ha-icon icon="mdi:arrow-down"></ha-icon>
-                   </ha-icon-button>
-                   <ha-icon-button @click="${() => this._removeEntity(idx)}" style="color: #db4437;">
-                     <ha-icon icon="mdi:delete"></ha-icon>
-                   </ha-icon-button>
                  </div>
                </div>
+             `;
+          })}
+        </div>
+      </div>`;
+  }
 
-               <div class="controls" style="display: grid; grid-template-columns: 40px 1fr; gap: 10px; align-items: center; margin-top: 8px;">
-                 <input type="color" .value="${ent.color}" 
-                   @input="${e => this._entityPropertyChanged(idx, 'color', e.target.value)}"
-                   style="width: 100%; height: 35px; cursor: pointer;">
-                 <ha-textfield label="Picture URL" .value="${ent.picture || ''}" 
-                   @input="${e => this._entityPropertyChanged(idx, 'picture', e.target.value)}"></ha-textfield>
+  _renderMonthGrid() {
+    const start = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth(), 1);
+    const end = new Date(this._referenceDate.getFullYear(), this._referenceDate.getMonth() + 1, 0);
+    const startDay = (start.getDay() + 6) % 7; // Mon start
+    const days = [];
+    
+    // Pad start
+    for (let i = 0; i < startDay; i++) days.push({ date: null });
+    // Fill month
+    for (let i = 1; i <= end.getDate(); i++) days.push({ date: i, fullDate: new Date(start.getFullYear(), start.getMonth(), i) });
+
+    return html`
+      <div class="calendar-month">
+        <div class="cal-header-row">
+           ${['MON','TUE','WED','THU','FRI','SAT','SUN'].map(d => html`<div>${d}</div>`)}
+        </div>
+        <div class="cal-grid no-scrollbar">
+           ${days.map(d => {
+              if (!d.date) return html`<div class="cal-day empty"></div>`;
+              
+              const dateStr = d.fullDate.toDateString();
+              const isToday = this._isToday(d.date);
+              const events = this._events.filter(e => {
+                 if (!this._activeCalendars.includes(e.origin)) return false;
+                 const eStart = new Date(e.start.dateTime || e.start.date);
+                 return eStart.toDateString() === dateStr;
+              }); // Limit in rendering, not filter
+
+              return html`
+                <div class="cal-day ${isToday ? 'today' : ''}" @click="${() => this._handleMonthDayClick(d.date, events.length)}">
+                   <span class="day-number">${d.date}</span>
+                   <div class="day-events-list">
+                     ${events.slice(0, 4).map(e => html`
+                       <div class="evt-pill" style="background-color: ${e.color}" title="${e.summary}"
+                            @click="${(ev) => { ev.stopPropagation(); this._selectedEvent = e; }}">
+                         ${e.summary}
+                       </div>
+                     `)}
+                     ${events.length > 4 ? html`<div class="evt-more">+${events.length - 4}</div>` : ''}
+                   </div>
+                </div>
+              `;
+           })}
+        </div>
+      </div>
+    `;
+  }
+
+  _renderAgenda() {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const endWindow = new Date(today);
+    endWindow.setDate(today.getDate() + 30);
+
+    const relevantEvents = this._events.filter(e => this._activeCalendars.includes(e.origin));
+    let feedItems = [];
+
+    relevantEvents.forEach(e => {
+       const start = new Date(e.start.dateTime || e.start.date);
+       const end = new Date(e.end.dateTime || e.end.date);
+       // Normalize multi-day check
+       const isMultiDay = (end.getTime() - start.getTime()) > 86400000;
+       
+       if (end < today || start > endWindow) return; // Out of range
+
+       // 1. Start Entry
+       if (start >= today) {
+          feedItems.push({
+             type: 'start',
+             date: start,
+             event: e,
+             isMultiDay
+          });
+       }
+
+       // 2. End Entry for MultiDay
+       if (isMultiDay && end <= endWindow && end >= today) {
+          feedItems.push({
+             type: 'end',
+             date: end,
+             event: e
+          });
+       }
+    });
+
+    feedItems.sort((a,b) => a.date - b.date);
+
+    return html`
+      <div class="agenda-feed no-scrollbar">
+        ${feedItems.map(item => {
+           const d = item.date;
+           const e = item.event;
+           const isStart = item.type === 'start';
+           const label = isStart ? (item.isMultiDay ? 'Starts: ' + e.summary : e.summary) : 'Ends: ' + e.summary;
+           
+           return html`
+             <div class="feed-item ${!isStart ? 'feed-end' : ''}" @click="${() => this._selectedEvent = e}">
+                <div class="feed-date">
+                   <span class="fd-day">${d.getDate()}</span>
+                   <span class="fd-mon">${d.toLocaleDateString('default', {month:'short'})}</span>
+                </div>
+                <div class="feed-content-wrapper" style="border-left: 4px solid ${e.color};">
+                   <div class="feed-content">
+                      <div class="feed-title">${label}</div>
+                      <div class="feed-time">
+                        ${e.isAllDay ? 'All Day' : d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                        ${!isStart ? ' (Finish)' : ''}
+                      </div>
+                   </div>
+                   ${item.isMultiDay && isStart ? html`<div class="connector-line" style="background: ${e.color}"></div>` : ''}
+                </div>
+             </div>
+           `;
+        })}
+        ${feedItems.length === 0 ? html`<div class="empty-state">No upcoming events in next 30 days.</div>` : ''}
+      </div>
+    `;
+  }
+
+  _renderTimeGrid(daysCount) {
+     const start = new Date(this._referenceDate);
+     if (daysCount === 7) {
+        const day = start.getDay();
+        start.setDate(start.getDate() - day + (day === 0 ? -6 : 1));
+     }
+     
+     const hours = Array.from({length:24},(_,i)=>i);
+     const frags = this._fragmentEvents(this._events, start);
+
+     return html`
+       <div class="time-grid no-scrollbar">
+         <!-- Header -->
+         <div class="tg-header">
+           <div class="tg-gutter"></div>
+           ${Array.from({length:daysCount}).map((_,i) => {
+              const d = new Date(start); d.setDate(start.getDate() + i);
+              return html`<div class="tg-col-head">${d.toLocaleDateString('default', {weekday:'short', day:'numeric'})}</div>`;
+           })}
+         </div>
+         <!-- All Day -->
+         <div class="tg-allday">
+            <div class="tg-gutter-label">ALL DAY</div>
+            <div class="tg-allday-cols" style="grid-template-columns: repeat(${daysCount}, 1fr)">
+               ${Array.from({length:daysCount}).map((_,i) => {
+                  const d = new Date(start); d.setDate(start.getDate() + i);
+                  const evs = frags.filter(e => this._activeCalendars.includes(e.origin) && e.displayDate === d.toDateString() && (e.isAllDay || e.isFragment));
+                  return html`
+                    <div class="tg-ad-cell">
+                      ${evs.map(e => html`<div class="ad-pill" style="background:${e.color}">${e.summary}</div>`)}
+                    </div>`;
+               })}
+            </div>
+         </div>
+         <!-- Scrollable Body -->
+         <div class="tg-body no-scrollbar">
+            <div class="tg-time-axis">
+               ${hours.map(h => html`<div class="tg-hour-marker"><span>${h}:00</span></div>`)}
+            </div>
+            <div class="tg-cols" style="grid-template-columns: repeat(${daysCount}, 1fr)">
+               ${Array.from({length:daysCount}).map((_,i) => {
+                  const d = new Date(start); d.setDate(start.getDate() + i);
+                  const evs = frags.filter(e => this._activeCalendars.includes(e.origin) && e.displayDate === d.toDateString() && !e.isAllDay && !e.isFragment);
+                  return html`
+                    <div class="tg-day-col">
+                       ${hours.map(() => html`<div class="tg-grid-line"></div>`)}
+                       ${evs.map(e => html`
+                          <div class="tg-event ${this._isPast(e) ? 'past' : ''}" 
+                               style="${this._getTimeStyles(e)}; background-color: ${e.color}"
+                               @click="${() => this._selectedEvent = e}">
+                            ${e.summary}
+                          </div>
+                       `)}
+                    </div>`;
+               })}
+            </div>
+         </div>
+       </div>`;
+  }
+
+  _renderModal() {
+    if (!this._selectedEvent) return '';
+    const start = new Date(this._selectedEvent.start.dateTime || this._selectedEvent.start.date);
+    const end = new Date(this._selectedEvent.end.dateTime || this._selectedEvent.end.date);
+    const timeStr = this._selectedEvent.isAllDay 
+        ? 'All Day' 
+        : `${start.toLocaleString()} - ${end.toLocaleTimeString()}`;
+
+    return html`
+      <div class="modal-overlay" @click="${() => this._selectedEvent = null}">
+        <div class="modal-card" @click="${e => e.stopPropagation()}">
+           <div class="modal-header" style="background: ${this._selectedEvent.color}">
+             <h2>${this._selectedEvent.summary}</h2>
+             <button @click="${() => this._selectedEvent = null}">✕</button>
+           </div>
+           <div class="modal-content">
+             <div class="meta-row">
+               <ha-icon icon="mdi:clock-outline"></ha-icon>
+               <span>${timeStr}</span>
+             </div>
+             ${this._selectedEvent.location ? html`
+             <div class="meta-row">
+               <ha-icon icon="mdi:map-marker"></ha-icon>
+               <span>${this._selectedEvent.location}</span>
+             </div>` : ''}
+             <div class="meta-row">
+               <ha-icon icon="mdi:calendar-blank"></ha-icon>
+               <span>${this._selectedEvent.friendly_name}</span>
+             </div>
+             ${this._selectedEvent.description ? html`
+               <div class="desc-box" .innerHTML="${this._sanitize(this._selectedEvent.description)}"></div>
+             ` : ''}
+           </div>
+        </div>
+      </div>`;
+  }
+
+  _renderAddModal() {
+    const now = new Date().toISOString().split('T')[0];
+    return html`
+      <div class="modal-overlay" @click="${() => this._showAddModal = false}">
+         <div class="modal-card create-modal" @click="${e => e.stopPropagation()}">
+            <div class="modal-header">
+               <h2>Create Event</h2>
+               <button @click="${() => this._showAddModal = false}">✕</button>
+            </div>
+            <div class="modal-content form-layout">
+               <input type="text" id="new_summary" placeholder="Event Title" class="input-field primary">
+               <div class="row">
+                  <input type="date" id="new_date_start" value="${now}" class="input-field">
+                  <input type="time" id="new_start_time" value="12:00" class="input-field">
                </div>
-             </div>`)}
+               <div class="row">
+                  <input type="date" id="new_date_end" value="${now}" class="input-field">
+                  <input type="time" id="new_end_time" value="13:00" class="input-field">
+               </div>
+               <input type="text" id="new_location" placeholder="Location" class="input-field">
+               <textarea id="new_description" placeholder="Notes" rows="3" class="input-field"></textarea>
+               <select id="new_calendar" class="input-field">
+                  ${(this.config.entities || []).filter(e => e.entity.startsWith('calendar')).map(ent => html`<option value="${ent.entity}">${ent.entity}</option>`)}
+               </select>
+            </div>
+            <div class="modal-footer">
+               <button class="btn-primary full" @click="${this._submitEvent}">Create Event</button>
+            </div>
          </div>
-       </ha-expansion-panel>
+      </div>
+    `;
+  }
 
-       <ha-expansion-panel header="Meal Plan Entities" outlined>
-         <div class="panel-content">
-           ${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => html`
-             <ha-entity-picker 
-               label="${day} Dinner Entity"
-               .hass="${this.hass}"
-               .value="${(this._config.meal_entities || {})[day]}"
-               .includeDomains="${['input_text']}"
-               @value-changed="${e => {
-                 const meal_entities = { ...(this._config.meal_entities || {}) };
-                 meal_entities[day] = e.detail.value;
-                 this._updateConfig({ meal_entities });
-               }}">
-             </ha-entity-picker>
-           `)}
-         </div>
-       </ha-expansion-panel>
+  static get styles() {
+    return css`
+      :host {
+        /* SKYLIGHT LIGHT THEME */
+        --nl-bg: #FFFFFF;
+        --nl-surface: #F3F4F6;
+        --nl-fg: #111827;
+        --nl-fg-sec: #6B7280;
+        --nl-border: #E5E7EB;
+        --nl-accent: #3B82F6;
+        --nl-sidebar-w: 240px;
+        --nl-radius: 12px;
+        --nl-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 56px); /* Fix for height collapsing */
+        min-height: 600px;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        background: var(--primary-background-color);
+        font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        overflow: hidden;
+      }
+      
+      * { box-sizing: border-box; }
 
-       <ha-expansion-panel header="Notes Configuration" outlined>
-         <div class="panel-content">
-           <ha-entity-picker 
-             label="Notes To-do List"
-             .hass="${this.hass}"
-             .value="${this._config.notes_entity}"
-             .includeDomains="${['todo']}"
-             @value-changed="${e => this._updateConfig({ notes_entity: e.detail.value })}">
-           </ha-entity-picker>
-         </div>
-       </ha-expansion-panel>
-     </div>`;
+      /* SKYLIGHT DARK THEME */
+      .nightlight-hub.dark {
+        --nl-bg: #111827;
+        --nl-surface: #1F2937;
+        --nl-fg: #F9FAFB;
+        --nl-fg-sec: #9CA3AF;
+        --nl-border: #374151;
+        --nl-accent: #60A5FA;
+        --nl-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+      }
+
+      /* Unified Mode Styling */
+      .nightlight-hub {
+        display: flex;
+        height: 100%;
+        width: 100%;
+        color: var(--nl-fg);
+        background: var(--nl-bg);
+        transition: background 0.3s, color 0.3s;
+      }
+
+      /* Sidebar - Persistent on Desktop */
+      .sidebar {
+        width: var(--nl-sidebar-w);
+        background: var(--nl-surface);
+        border-right: 1px solid var(--nl-border);
+        display: flex;
+        flex-direction: column;
+        padding: 24px 16px;
+        gap: 12px;
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        z-index: 100;
+        flex-shrink: 0;
+      }
+      .sidebar-top {
+        display: flex;
+        align-items: center;
+        margin-bottom: 32px;
+        justify-content: space-between;
+        padding-left: 12px;
+      }
+      .logo ha-icon { color: var(--nl-accent); --mdc-icon-size: 36px; }
+      .mobile-close { background: none; border: none; font-size: 24px; color: var(--nl-fg); display: none; cursor: pointer;}
+      
+      .nav-group { display: flex; flex-direction: column; gap: 6px; }
+      .nav-divider { height: 1px; background: var(--nl-border); margin: 16px 8px; }
+      
+      .nav-item {
+        background: none;
+        border: none;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 12px 16px;
+        border-radius: var(--nl-radius);
+        color: var(--nl-fg-sec);
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-align: left;
+        font-size: 1rem;
+      }
+      .nav-item:hover { background: rgba(125,125,125,0.05); color: var(--nl-fg); }
+      .nav-item.active { background: var(--nl-bg); color: var(--nl-accent); font-weight: 700; box-shadow: var(--nl-shadow); }
+      .nav-icon-container { position: relative; display: flex; align-items: center;}
+      .badge { position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; background: #EF4444; border-radius: 50%; }
+
+      .mobile-toggle { display: none; position: absolute; top: 16px; left: 16px; z-index: 50; color: var(--nl-fg); }
+      
+      /* Sidebar Controls (New) */
+      .sidebar-controls { margin-top: auto; padding-top: 20px; border-top: 1px solid var(--nl-border); display: flex; flex-direction: column; gap: 16px; }
+      .control-label { font-size: 0.75rem; text-transform: uppercase; color: var(--nl-fg-sec); font-weight: 700; letter-spacing: 0.5px; margin-bottom: 8px; }
+      .view-toggles.sidebar-mode { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; border: none; background: none; padding: 0; }
+      .view-toggles.sidebar-mode button { background: var(--nl-surface); border: 1px solid var(--nl-border); color: var(--nl-fg); text-align: center; justify-content: center; padding: 10px; border-radius: 8px; cursor: pointer; }
+      .view-toggles.sidebar-mode button.active { background: var(--nl-accent); color: #fff; border-color: var(--nl-accent); }
+      .today-btn.full { width: 100%; margin: 8px 0 0 0; text-align: center; background: var(--nl-surface); border: 1px solid var(--nl-border); padding: 8px 16px; border-radius: 8px; cursor: pointer; color: var(--nl-fg); font-weight: 600; }
+      .persona-stack.sidebar-mode { flex-wrap: wrap; margin: 0; gap: 8px; display: flex; }
+
+      /* Main Stage */
+      .stage { flex: 1; display: flex; flex-direction: column; position: relative; overflow: hidden; background: var(--nl-bg); }
+      .stage-header {
+        padding: 24px 32px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-shrink: 0;
+      }
+      .header-left { display: flex; align-items: center; gap: 24px; }
+      .header-titles h1 { margin: 0; font-size: 2rem; font-weight: 700; color: var(--nl-fg); letter-spacing: -0.5px; }
+      
+      /* Subtitle Fix for Mobile */
+      .subtitle { 
+        display: flex; 
+        align-items: center; 
+        gap: 12px; 
+        color: var(--nl-fg-sec); 
+        font-size: 1.1rem; 
+        margin-top: 4px; 
+        white-space: nowrap; 
+      }
+      .clock { font-feature-settings: "tnum"; font-variant-numeric: tabular-nums; font-weight: 500; }
+      
+      .nav-controls { display: flex; gap: 8px; }
+      .nav-controls button { background: var(--nl-surface); border: 1px solid var(--nl-border); border-radius: 8px; cursor: pointer; color: var(--nl-fg); padding: 4px 8px; transition: background 0.2s; }
+      .nav-controls button:hover { background: var(--nl-border); }
+      
+      .header-right { display: flex; align-items: center; gap: 20px; }
+      .calendar-controls { display: flex; align-items: center; gap: 16px; }
+
+      /* Theme Switch Styling */
+      .theme-switch {
+        width: 68px;
+        height: 38px;
+        background: var(--nl-surface);
+        border: 1px solid var(--nl-border);
+        border-radius: 24px;
+        position: relative;
+        cursor: pointer;
+        transition: background 0.3s;
+      }
+      .switch-knob {
+        width: 30px;
+        height: 30px;
+        background: var(--nl-fg);
+        border-radius: 50%;
+        position: absolute;
+        top: 3px;
+        left: 4px;
+        transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--nl-bg);
+      }
+      .dark .switch-knob { transform: translateX(30px); background: var(--nl-accent); color: #fff; }
+
+      .persona-dot { width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--nl-bg); cursor: pointer; transition: transform 0.2s, opacity 0.2s; opacity: 0.4; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+      .persona-dot.active { opacity: 1; transform: scale(1.1); z-index: 10; border-color: var(--nl-accent); }
+      .persona-dot img { width: 100%; height: 100%; object-fit: cover; }
+
+      .content-body { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 0 32px 32px 32px; box-sizing: border-box; }
+      
+      /* Scrollbar hiding */
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+      /* Calendar Grid - Skylight Style */
+      .calendar-month { height: 100%; display: flex; flex-direction: column; background: var(--nl-bg); border-radius: var(--nl-radius); border: 1px solid var(--nl-border); overflow: hidden; box-shadow: var(--nl-shadow); }
+      .cal-header-row { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; padding: 16px 0; border-bottom: 1px solid var(--nl-border); font-weight: 600; color: var(--nl-fg-sec); font-size: 0.9rem; letter-spacing: 1px; background: var(--nl-surface); }
+      .cal-grid { flex: 1; display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: 1fr; overflow-y: auto; -ms-overflow-style: none; scrollbar-width: none; }
+      .cal-grid::-webkit-scrollbar { display: none; }
+      
+      .cal-day { border-right: 1px solid var(--nl-border); border-bottom: 1px solid var(--nl-border); padding: 8px; cursor: pointer; transition: background 0.1s; display: flex; flex-direction: column; gap: 6px; overflow: hidden; position: relative; }
+      .cal-day:hover { background: var(--nl-surface); }
+      .cal-day.today { background: rgba(59, 130, 246, 0.05); }
+      .cal-day.today .day-number { color: var(--nl-accent); font-weight: 800; transform: scale(1.1); }
+      .day-number { font-size: 1rem; color: var(--nl-fg); padding: 4px; font-weight: 500; align-self: flex-start; }
+      .day-events-list { display: flex; flex-direction: column; gap: 3px; flex: 1; }
+      .evt-pill { font-size: 11px; padding: 3px 6px; border-radius: 4px; color: #fff; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; line-height: 1.3; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,0.1); transition: transform 0.1s; }
+      .evt-pill:hover { transform: scale(1.02); z-index: 2; }
+      .evt-more { font-size: 10px; color: var(--nl-fg-sec); font-weight: 600; padding-left: 6px; }
+
+      /* Time Grid */
+      .time-grid { display: flex; flex-direction: column; height: 100%; border: 1px solid var(--nl-border); border-radius: var(--nl-radius); background: var(--nl-bg); overflow: hidden; box-shadow: var(--nl-shadow); }
+      
+      .tg-header { display: flex; border-bottom: 1px solid var(--nl-border); background: var(--nl-surface); }
+      .tg-gutter { width: 60px; flex-shrink: 0; border-right: 1px solid var(--nl-border); }
+      .tg-col-head { flex: 1; text-align: center; padding: 12px; font-weight: 600; font-size: 1rem; border-right: 1px solid var(--nl-border); color: var(--nl-fg); }
+      .tg-allday { display: flex; border-bottom: 2px solid var(--nl-border); min-height: 40px; background: var(--nl-bg); }
+      .tg-gutter-label { width: 60px; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; color: var(--nl-fg-sec); border-right: 1px solid var(--nl-border); font-weight: 700; letter-spacing: 0.5px; }
+      .tg-allday-cols { flex: 1; display: grid; }
+      .tg-ad-cell { border-right: 1px solid var(--nl-border); padding: 4px; display: flex; flex-direction: column; gap: 2px; }
+      .ad-pill { font-size: 0.8rem; padding: 4px 8px; border-radius: 4px; color: #fff; white-space: nowrap; overflow: hidden; font-weight: 600; }
+      .tg-body { flex: 1; overflow-y: auto; display: flex; position: relative; }
+      .tg-time-axis { width: 60px; flex-shrink: 0; border-right: 1px solid var(--nl-border); background: var(--nl-surface); }
+      .tg-hour-marker { height: 60px; border-bottom: 1px solid transparent; position: relative; }
+      .tg-hour-marker span { position: absolute; top: -8px; right: 8px; font-size: 0.8rem; color: var(--nl-fg-sec); font-weight: 500; }
+      .tg-cols { flex: 1; display: grid; }
+      .tg-day-col { border-right: 1px solid var(--nl-border); position: relative; height: 1440px; background: var(--nl-bg); } /* 24 * 60 */
+      .tg-grid-line { height: 60px; border-bottom: 1px solid var(--nl-border); box-sizing: border-box; }
+      .tg-event { position: absolute; left: 4px; right: 4px; padding: 6px; border-radius: 6px; font-size: 0.85rem; color: #fff; overflow: hidden; cursor: pointer; z-index: 10; border: 1px solid rgba(255,255,255,0.2); font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.15); }
+
+      /* Agenda Feed */
+      .agenda-feed { display: flex; flex-direction: column; gap: 24px; padding: 0 16px; overflow-y: auto; height: 100%; }
+      .feed-item { display: flex; gap: 24px; align-items: stretch; cursor: pointer; group: true; }
+      .feed-date { display: flex; flex-direction: column; align-items: center; min-width: 60px; padding-top: 8px; }
+      .fd-day { font-size: 2rem; font-weight: 700; color: var(--nl-fg); line-height: 1; letter-spacing: -1px; }
+      .fd-mon { font-size: 0.9rem; text-transform: uppercase; color: var(--nl-accent); font-weight: 700; margin-top: 4px; }
+      .feed-content-wrapper { flex: 1; background: var(--nl-surface); border-radius: 12px; border: 1px solid var(--nl-border); padding: 16px; position: relative; display: flex; flex-direction: column; transition: transform 0.2s, box-shadow 0.2s; }
+      .feed-item:hover .feed-content-wrapper { transform: translateY(-2px); box-shadow: var(--nl-shadow); background: var(--nl-bg); }
+      .feed-content { display: flex; justify-content: space-between; align-items: center; }
+      .feed-title { font-weight: 600; font-size: 1.1rem; color: var(--nl-fg); }
+      .feed-time { font-size: 0.9rem; color: var(--nl-fg-sec); font-weight: 500; }
+      .feed-end .feed-date { opacity: 0.5; }
+      .feed-end .feed-title { color: var(--nl-fg-sec); font-style: italic; }
+      .connector-line { position: absolute; left: -29px; top: 40px; bottom: -40px; width: 4px; opacity: 0.3; z-index: 0; border-radius: 2px; }
+
+      /* Modules: Chores, Meals, Notes */
+      .chore-dashboard { height: 100%; display: flex; flex-direction: column; }
+      .period-badge { align-self: flex-end; background: var(--nl-accent); color: #fff; padding: 6px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 700; margin-bottom: 24px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+      .chore-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+      .kid-card { background: var(--nl-surface); border-radius: 20px; overflow: hidden; border: 1px solid var(--nl-border); display: flex; flex-direction: column; box-shadow: var(--nl-shadow); }
+      .kid-hero { height: 120px; background-size: cover; background-position: center; position: relative; }
+      .hero-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 16px; background: linear-gradient(transparent, rgba(0,0,0,0.8)); color: #fff; }
+      .hero-overlay h3 { margin: 0; font-size: 1.4rem; font-weight: 700; }
+      .task-list { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+      .task-row { display: flex; align-items: center; gap: 16px; padding: 16px; background: var(--nl-bg); border-radius: 12px; cursor: pointer; transition: all 0.2s; border: 1px solid var(--nl-border); }
+      .task-row:hover { transform: translateX(4px); border-color: var(--nl-accent); }
+      .task-row.completed { opacity: 0.6; text-decoration: line-through; background: transparent; border-style: dashed; }
+      .task-row.completed ha-icon { color: #10B981; }
+      
+      .meals-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px; }
+      .meal-card { background: var(--nl-surface); border: 1px solid var(--nl-border); border-radius: 20px; padding: 20px; display: flex; flex-direction: column; box-shadow: var(--nl-shadow); transition: transform 0.2s; }
+      .meal-card:hover { transform: translateY(-4px); }
+      .meal-header { display: flex; justify-content: space-between; align-items: center; font-weight: 800; color: var(--nl-accent); margin-bottom: 12px; text-transform: uppercase; font-size: 0.85rem; letter-spacing: 1px; }
+      .meal-date { color: var(--nl-fg-sec); font-weight: 600; }
+      .meal-card.today { border-color: var(--nl-accent); background: rgba(59, 130, 246, 0.05); }
+      .meal-content { display: flex; flex-direction: column; gap: 12px; flex: 1; }
+      .meal-select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--nl-border); background: var(--nl-bg); color: var(--nl-fg); font-family: inherit; font-size: 1rem; outline: none; cursor: pointer; }
+      .meal-macros { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+      .macro { font-size: 0.75rem; padding: 4px 8px; border-radius: 12px; font-weight: 600; }
+      .macro.cal { background: rgba(239, 68, 68, 0.1); color: #EF4444; }
+      .macro.pro { background: rgba(59, 130, 246, 0.1); color: #3B82F6; }
+      .macro.carbs { background: rgba(16, 185, 129, 0.1); color: #10B981; }
+      .macro.fat { background: rgba(245, 158, 11, 0.1); color: #F59E0B; }
+
+      /* Shopping List */
+      .shopping-container { display: flex; flex-direction: column; gap: 24px; max-width: 600px; margin: 0 auto; width: 100%; }
+      .shopping-add { display: flex; gap: 12px; }
+      .shopping-add input { flex: 1; padding: 14px; border-radius: 12px; border: 1px solid var(--nl-border); background: var(--nl-surface); color: var(--nl-fg); font-family: inherit; font-size: 1rem; outline: none; }
+      .shopping-add input:focus { border-color: var(--nl-accent); }
+      .shopping-list { display: flex; flex-direction: column; gap: 8px; }
+      .shopping-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--nl-surface); border: 1px solid var(--nl-border); border-radius: 12px; transition: all 0.2s; }
+      .shopping-item.checked { opacity: 0.6; background: transparent; border-style: dashed; }
+      .shopping-item.checked .shopping-item-name { text-decoration: line-through; }
+      .shopping-item-left { display: flex; align-items: center; gap: 12px; flex: 1; cursor: pointer; }
+      .shopping-item-left ha-icon { color: var(--nl-accent); }
+      .shopping-item.checked ha-icon { color: #10B981; }
+      .shopping-item-name { font-weight: 600; color: var(--nl-fg); font-size: 1.05rem; }
+      .shopping-item-meta { font-size: 0.85rem; color: var(--nl-fg-sec); background: var(--nl-bg); padding: 2px 8px; border-radius: 10px; margin-left: auto; margin-right: 12px; }
+      .shopping-item-delete { background: none; border: none; color: #EF4444; cursor: pointer; opacity: 0.5; transition: opacity 0.2s; padding: 4px; display: flex; align-items: center; justify-content: center; }
+      .shopping-item-delete:hover { opacity: 1; }
+
+      .whiteboard-board { display: flex; flex-direction: column; height: 100%; }
+      .whiteboard-tools { margin-bottom: 24px; display: flex; justify-content: flex-end; }
+      .notes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 24px; }
+      .note-card { background: #FEF3C7; padding: 24px; border-radius: 2px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); position: relative; min-height: 160px; color: #333; transform: rotate(-1deg); transition: transform 0.2s; border-top: 1px solid rgba(0,0,0,0.05); }
+      .note-card:hover { transform: scale(1.02) rotate(0deg); z-index: 5; box-shadow: 0 10px 15px rgba(0,0,0,0.1); }
+      .note-close { position: absolute; top: 8px; right: 8px; background: none; border: none; cursor: pointer; opacity: 0.4; font-weight: bold; font-size: 1.2rem; transition: opacity 0.2s; }
+      .note-close:hover { opacity: 1; }
+      .note-body { font-family: 'Comic Sans MS', 'Chalkboard SE', sans-serif; font-size: 1.2rem; line-height: 1.5; color: #4B5563; }
+
+      /* Modals */
+      .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 2000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); }
+      .modal-card { background: var(--nl-bg); width: 90%; max-width: 450px; border-radius: 24px; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); border: 1px solid var(--nl-border); }
+      @keyframes slideUp { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+      .modal-header { padding: 24px; display: flex; justify-content: space-between; align-items: flex-start; color: #fff; }
+      .modal-header h2 { margin: 0; font-size: 1.5rem; font-weight: 700; line-height: 1.2; }
+      .modal-header button { background: rgba(0,0,0,0.2); border: none; color: #fff; font-size: 1.2rem; cursor: pointer; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+      .modal-content { padding: 32px; display: flex; flex-direction: column; gap: 20px; }
+      .meta-row { display: flex; align-items: center; gap: 16px; color: var(--nl-fg); font-size: 1.1rem; }
+      .meta-row ha-icon { color: var(--nl-fg-sec); }
+      .desc-box { background: var(--nl-surface); padding: 16px; border-radius: 12px; color: var(--nl-fg-sec); line-height: 1.6; }
+      
+      .input-field { width: 100%; padding: 14px; border-radius: 12px; border: 1px solid var(--nl-border); background: var(--nl-surface); color: var(--nl-fg); box-sizing: border-box; font-family: inherit; font-size: 1rem; transition: border-color 0.2s; }
+      .input-field:focus { border-color: var(--nl-accent); outline: none; }
+      .row { display: flex; gap: 16px; }
+      .btn-primary { background: var(--nl-accent); color: #fff; border: none; padding: 14px 24px; border-radius: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 1rem; transition: transform 0.1s, opacity 0.2s; }
+      .btn-primary:hover { opacity: 0.9; }
+      .btn-primary:active { transform: scale(0.98); }
+      .btn-primary.full { width: 100%; justify-content: center; }
+      
+      .fab { position: fixed; bottom: 40px; right: 40px; width: 64px; height: 64px; border-radius: 50%; background: var(--nl-accent); color: #fff; border: none; font-size: 28px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; z-index: 100; }
+      .fab:hover { transform: scale(1.1); }
+
+      /* Editor Styles */
+      .editor-container {
+        padding: 16px;
+        font-family: var(--paper-font-body1_-_font-family);
+        color: var(--primary-text-color);
+      }
+      .editor-section {
+        background: var(--card-background-color);
+        border: 1px solid var(--divider-color);
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .editor-section h3 {
+        margin-top: 0;
+        margin-bottom: 16px;
+        font-weight: 500;
+        color: var(--primary-color);
+      }
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 16px;
+      }
+      .full-width {
+        grid-column: 1 / -1;
+      }
+      .info-box {
+        background: rgba(var(--rgb-primary-color), 0.1);
+        padding: 12px;
+        border-radius: 4px;
+        font-size: 0.9em;
+        margin-top: 8px;
+        color: var(--primary-text-color);
+      }
+
+      /* Responsive */
+      @media (max-width: 768px) {
+        .sidebar { position: fixed; inset: 0; width: 85%; max-width: 320px; transform: translateX(-100%); z-index: 2000; box-shadow: 10px 0 25px rgba(0,0,0,0.5); }
+        .menu-open .sidebar { transform: translateX(0); }
+        .mobile-toggle { display: block; }
+        .mobile-close { display: block; }
+        .desktop-toggle { display: none; }
+        .stage-header { padding-left: 60px; padding-right: 16px; }
+        .header-titles h1 { font-size: 1.2rem; }
+        .subtitle { font-size: 0.9rem; }
+        .tg-col-head { font-size: 0.8rem; text-overflow: ellipsis; overflow: hidden; padding: 8px 2px; }
+        .content-body { padding: 0 16px 16px 16px; }
+      }
+    `;
+  }
 }
 
-static get styles() {
-return css`
-     .editor-shell { display: flex; flex-direction: column; gap: 12px; padding: 10px; color: var(--primary-text-color); }
-     ha-expansion-panel { background: var(--secondary-background-color); border-radius: 12px; margin-bottom: 10px; }
-     .panel-content { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
-     ha-textfield, ha-select, ha-entity-picker { display: block; width: 100%; margin-top: 8px; }
-     ha-icon-button { display: flex; align-items: center; justify-content: center; }
-     .period-header { display: grid; grid-template-columns: 80px 80px 1fr 40px; gap: 8px; font-size: 0.7rem; font-weight: bold; text-transform: uppercase; color: var(--secondary-text-color); padding: 0 8px; }
-     .period-row { display: grid; grid-template-columns: 80px 80px 1fr 40px; gap: 8px; align-items: center; background: var(--primary-background-color); padding: 8px; border-radius: 8px; }
-     .kid-box { padding: 15px; border: 1px solid var(--divider-color); border-radius: 12px; background: var(--card-background-color); display: flex; flex-direction: column; gap: 12px; }
-     .kid-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-     .mapping-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-     .period-group { padding: 10px; background: var(--secondary-background-color); border-radius: 8px; border-left: 3px solid var(--accent-color, #7b61ff); display: flex; flex-direction: column; gap: 8px; }
-     .period-group-title { display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 0.85rem; }
-     .chore-row { display: grid; grid-template-columns: 1fr 40px; align-items: center; gap: 8px; padding: 8px; background: var(--primary-background-color); border-radius: 8px; border: 1px solid var(--divider-color); }
-     .mush-btn { width: 100%; margin-top: 10px; }
-   `;
-}
+class NightlightCardEditor extends LitElement {
+  static get properties() { return { hass: {}, _config: {} }; }
+
+  setConfig(config) {
+    this._config = config;
+    this.requestUpdate();
+  }
+
+  _updateConfig(changes) {
+    this.dispatchEvent(new CustomEvent("config-changed", { 
+      detail: { config: { ...this._config, ...changes } },
+      bubbles: true, 
+      composed: true 
+    }));
+  }
+
+  _valueChanged(ev) {
+    if (!this._config || !this.hass) return;
+    const target = ev.target;
+    const field = target.configValue; 
+    const value = target.value;
+    if (field) this._updateConfig({ [field]: value });
+  }
+
+  static get styles() {
+      return css`
+      .editor-container { padding: 16px; font-family: var(--paper-font-body1_-_font-family); }
+      .editor-section { background: var(--card-background-color); border: 1px solid var(--divider-color); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+      .editor-section h3 { margin-top: 0; margin-bottom: 16px; font-weight: 500; color: var(--primary-color); border-bottom: 1px solid var(--divider-color); padding-bottom: 8px; }
+      .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+      .full-width { grid-column: 1 / -1; }
+      .info-box { background: var(--secondary-background-color); padding: 12px; border-radius: 4px; font-size: 0.9em; margin-top: 16px; border-left: 4px solid var(--primary-color); }
+      `;
+  }
+
+  render() {
+    if (!this.hass || !this._config) return html``;
+    return html`
+      <div class="editor-container">
+        <div class="editor-section">
+            <h3>General Settings</h3>
+            <div class="form-grid">
+                <ha-textfield label="Dashboard Title" .value="${this._config.title}" .configValue="${'title'}" @input="${this._valueChanged}"></ha-textfield>
+                <ha-textfield label="Logo URL" .value="${this._config.logo_url}" .configValue="${'logo_url'}" @input="${this._valueChanged}"></ha-textfield>
+                
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                   <label>Theme</label>
+                   <select .value="${this._config.theme || 'light'}" @change="${(e) => this._updateConfig({theme: e.target.value})}" style="padding: 10px; border-radius: 4px; border: 1px solid var(--divider-color);">
+                     <option value="light">Light Mode</option>
+                     <option value="dark">Dark Mode</option>
+                   </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="editor-section">
+            <h3>Integrations</h3>
+            <div class="form-grid">
+                <ha-entity-picker 
+                    .hass="${this.hass}" 
+                    label="View Controller" 
+                    .value="${this._config.view_controller}" 
+                    .configValue="${'view_controller'}" 
+                    .includeDomains="${['input_select']}" 
+                    @value-changed="${(e) => this._updateConfig({view_controller: e.detail.value})}">
+                </ha-entity-picker>
+                
+                <ha-entity-picker 
+                    .hass="${this.hass}" 
+                    label="Family Notes List" 
+                    .value="${this._config.notes_entity}" 
+                    .configValue="${'notes_entity'}" 
+                    .includeDomains="${['todo']}"
+                    @value-changed="${(e) => this._updateConfig({notes_entity: e.detail.value})}">
+                </ha-entity-picker>
+            </div>
+        </div>
+
+        <div class="info-box">
+           <strong>Advanced Configuration:</strong> Entities, Chores, Meal Plans, and Custom Navigation must be configured via YAML code editor. 
+           See documentation for structure.
+        </div>
+      </div>
+    `;
+  }
 }
 
-customElements.define("nightlight-calendar-card", NightlightDashboard);
-customElements.define("nightlight-card-editor", NightlightCardEditor);
+customElements.define("nightlight-dashboard-card", NightlightDashboard);
+customElements.define("nightlight-dashboard-editor", NightlightCardEditor);
 
 window.customCards = window.customCards || [];
 window.customCards.push({
-type: "nightlight-calendar-card",
-name: "Nightlight Hub v1.6.8",
-description: "To-do memory and user detection enabled."
+  type: "nightlight-dashboard-card",
+  name: "Nightlight Dashboard",
+  description: "Advanced Family Hub with Calendar, Chores & Meals"
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
