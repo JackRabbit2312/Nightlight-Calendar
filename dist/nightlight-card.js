@@ -765,15 +765,14 @@ class NightlightDashboard extends LitElement {
     
     const items = docs.map(doc => {
       const fields = doc.fields || {};
-      let rawName = fields.name?.stringValue || fields.name || "Unknown";
+      let rawName = fields.name?.stringValue ?? (typeof fields.name === 'string' ? fields.name : "Unknown");
       
       // Try to find category in various possible field names
-      let category = fields.category?.stringValue || 
-                     fields.Category?.stringValue || 
-                     fields.department?.stringValue || 
-                     fields.Department?.stringValue || 
-                     fields.category ||
-                     "";
+      let category = fields.category?.stringValue ?? 
+                     fields.Category?.stringValue ?? 
+                     fields.department?.stringValue ?? 
+                     fields.Department?.stringValue ?? 
+                     (typeof fields.category === 'string' ? fields.category : "");
                      
       let displayName = rawName;
       
@@ -791,8 +790,8 @@ class NightlightDashboard extends LitElement {
         category = category.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
       }
 
-      const id = fields.id?.stringValue || fields.id;
-      let checked = fields.checked?.booleanValue || fields.checked === true || false;
+      const id = fields.id?.stringValue ?? (typeof fields.id === 'string' ? fields.id : "");
+      let checked = fields.checked?.booleanValue ?? (typeof fields.checked === 'boolean' ? fields.checked : false);
       
       // Apply optimistic UI update if we just clicked it
       if (id && this._optimisticShoppingUpdates.has(id)) {
@@ -804,8 +803,8 @@ class NightlightDashboard extends LitElement {
         rawName: rawName,
         name: displayName,
         department: category,
-        amount: fields.amount?.doubleValue || fields.amount?.integerValue || fields.amount || 1,
-        unit: fields.unit?.stringValue || fields.unit || "",
+        amount: fields.amount?.doubleValue ?? fields.amount?.integerValue ?? (typeof fields.amount === 'number' ? fields.amount : 1),
+        unit: fields.unit?.stringValue ?? (typeof fields.unit === 'string' ? fields.unit : ""),
         checked: checked
       };
     });
@@ -929,7 +928,7 @@ class NightlightDashboard extends LitElement {
         const potentialUnit = (match[2] || "").toLowerCase();
         if (KNOWN_UNITS.has(potentialUnit)) {
           unit = potentialUnit;
-          parsedName = match[3];
+          parsedName = match[3] || "";
         } else {
           unit = "";
           // Crucial fix: if potentialUnit is NOT a known unit, it's part of the name.
@@ -983,10 +982,14 @@ class NightlightDashboard extends LitElement {
     this.requestUpdate();
 
     try {
-      // Use a dedicated toggle command to ONLY update the checked status
-      await this.hass.callService('rest_command', 'meal_planner_toggle_shopping_item', {
+      // Use the upsert command since we have all the data and we know it handles booleans correctly
+      await this.hass.callService('rest_command', 'meal_planner_upsert_shopping_item', {
         id: item.id,
-        checked: !item.checked ? "true" : "false"
+        name: item.rawName,
+        category: item.department,
+        amount: item.amount,
+        unit: item.unit,
+        checked: !item.checked
       });
       
       setTimeout(() => {
