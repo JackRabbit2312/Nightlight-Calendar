@@ -764,19 +764,32 @@ class NightlightDashboard extends LitElement {
     
     const items = docs.map(doc => {
       const fields = doc.fields || {};
+      let rawName = fields.name?.stringValue || "Unknown";
+      let department = "Other";
+      let displayName = rawName;
+      
+      const match = rawName.match(/^\[(.*?)\]\s*(.*)$/);
+      if (match) {
+        department = match[1];
+        displayName = match[2];
+      }
+
       return {
         id: fields.id?.stringValue,
-        name: fields.name?.stringValue || "Unknown",
+        rawName: rawName,
+        name: displayName,
+        department: department,
         amount: fields.amount?.doubleValue || fields.amount?.integerValue || 1,
         unit: fields.unit?.stringValue || "",
         checked: fields.checked?.booleanValue || false
       };
     });
 
-    // Sort: unchecked first, then alphabetical
+    // Sort: unchecked first, then department, then alphabetical
     items.sort((a, b) => {
-      if (a.checked === b.checked) return a.name.localeCompare(b.name);
-      return a.checked ? 1 : -1;
+      if (a.checked !== b.checked) return a.checked ? 1 : -1;
+      if (a.department !== b.department) return a.department.localeCompare(b.department);
+      return a.name.localeCompare(b.name);
     });
 
     return html`
@@ -790,18 +803,25 @@ class NightlightDashboard extends LitElement {
           }}">Add</button>
         </div>
         <div class="shopping-list">
-          ${items.map(item => html`
-            <div class="shopping-item ${item.checked ? 'checked' : ''}">
-              <div class="shopping-item-left" @click="${() => this._toggleShoppingItem(item)}">
-                <ha-icon icon="${item.checked ? 'mdi:checkbox-marked-circle' : 'mdi:checkbox-blank-circle-outline'}"></ha-icon>
-                <span class="shopping-item-name">${item.name}</span>
-                ${item.amount || item.unit ? html`<span class="shopping-item-meta">${item.amount} ${item.unit}</span>` : ''}
+          ${items.map((item, index) => {
+            const showDept = index === 0 || 
+                             (item.checked !== items[index - 1].checked) || 
+                             (!item.checked && item.department !== items[index - 1].department);
+            
+            return html`
+              ${showDept ? html`<div class="shopping-dept-header ${item.checked ? 'checked' : ''}">${item.checked ? 'Completed' : item.department}</div>` : ''}
+              <div class="shopping-item ${item.checked ? 'checked' : ''}">
+                <div class="shopping-item-left" @click="${() => this._toggleShoppingItem(item)}">
+                  <ha-icon icon="${item.checked ? 'mdi:checkbox-marked-circle' : 'mdi:checkbox-blank-circle-outline'}"></ha-icon>
+                  <span class="shopping-item-name">${item.name}</span>
+                  ${item.amount || item.unit ? html`<span class="shopping-item-meta">${item.amount} ${item.unit}</span>` : ''}
+                </div>
+                <button class="shopping-item-delete" @click="${() => this._deleteShoppingItem(item.id)}">
+                  <ha-icon icon="mdi:delete-outline"></ha-icon>
+                </button>
               </div>
-              <button class="shopping-item-delete" @click="${() => this._deleteShoppingItem(item.id)}">
-                <ha-icon icon="mdi:delete-outline"></ha-icon>
-              </button>
-            </div>
-          `)}
+            `;
+          })}
           ${items.length === 0 ? html`<div class="empty-state">Shopping list is empty.</div>` : ''}
         </div>
       </div>
@@ -826,7 +846,7 @@ class NightlightDashboard extends LitElement {
   async _toggleShoppingItem(item) {
     await this.hass.callService('rest_command', 'meal_planner_upsert_shopping_item', {
       id: item.id,
-      name: item.name,
+      name: item.rawName,
       amount: item.amount,
       unit: item.unit,
       checked: !item.checked
@@ -1477,6 +1497,8 @@ class NightlightDashboard extends LitElement {
       .shopping-add input { flex: 1; padding: 14px; border-radius: 12px; border: 1px solid var(--nl-border); background: var(--nl-surface); color: var(--nl-fg); font-family: inherit; font-size: 1rem; outline: none; }
       .shopping-add input:focus { border-color: var(--nl-accent); }
       .shopping-list { display: flex; flex-direction: column; gap: 8px; }
+      .shopping-dept-header { font-size: 0.85rem; text-transform: uppercase; font-weight: 700; color: var(--nl-accent); margin: 16px 0 4px 4px; letter-spacing: 1px; }
+      .shopping-dept-header.checked { color: var(--nl-fg-sec); margin-top: 24px; border-top: 1px solid var(--nl-border); padding-top: 16px; }
       .shopping-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--nl-surface); border: 1px solid var(--nl-border); border-radius: 12px; transition: all 0.2s; }
       .shopping-item.checked { opacity: 0.6; background: transparent; border-style: dashed; }
       .shopping-item.checked .shopping-item-name { text-decoration: line-through; }
