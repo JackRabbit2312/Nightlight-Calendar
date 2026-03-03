@@ -894,7 +894,8 @@ class NightlightDashboard extends LitElement {
         parsedName = mixedFractionMatch[5];
       } else {
         unit = "";
-        parsedName = (mixedFractionMatch[4] ? mixedFractionMatch[4] + " " : "") + mixedFractionMatch[5];
+        // If there's no unit, mixedFractionMatch[4] might be undefined, so we need to handle it carefully
+        parsedName = (mixedFractionMatch[4] ? mixedFractionMatch[4] + " " : "") + (mixedFractionMatch[5] || "");
       }
     } else if (fractionMatch) {
       amount = parseInt(fractionMatch[1]) / parseInt(fractionMatch[2]);
@@ -904,12 +905,19 @@ class NightlightDashboard extends LitElement {
         parsedName = fractionMatch[4];
       } else {
         unit = "";
-        parsedName = (fractionMatch[3] ? fractionMatch[3] + " " : "") + fractionMatch[4];
+        parsedName = (fractionMatch[3] ? fractionMatch[3] + " " : "") + (fractionMatch[4] || "");
       }
     } else {
       // Match decimals or integers with optional units attached (like 300g) or separated (like 3 tbsp)
+      // Also handles "Carrot - 1" by looking for numbers at the end if the start doesn't match
       const match = raw.match(/^([\d.]+)\s*([a-zA-Z]+)?\s*(.*)$/);
-      if (match) {
+      const reverseMatch = raw.match(/^(.*?)\s*-\s*([\d.]+)$/); // Matches "Carrot - 1" or "Carrot - 1.5"
+
+      if (reverseMatch) {
+        amount = parseFloat(reverseMatch[2]);
+        unit = "";
+        parsedName = reverseMatch[1];
+      } else if (match) {
         amount = parseFloat(match[1]);
         const potentialUnit = (match[2] || "").toLowerCase();
         if (KNOWN_UNITS.has(potentialUnit)) {
@@ -917,7 +925,11 @@ class NightlightDashboard extends LitElement {
           parsedName = match[3];
         } else {
           unit = "";
-          parsedName = (match[2] ? match[2] + " " : "") + match[3];
+          // Crucial fix: if potentialUnit is NOT a known unit, it's part of the name.
+          // We must ensure we don't concatenate undefined objects.
+          const part1 = match[2] ? match[2] + " " : "";
+          const part2 = match[3] || "";
+          parsedName = part1 + part2;
         }
       } else {
         // Handle "Pinch of ..."
@@ -936,6 +948,12 @@ class NightlightDashboard extends LitElement {
           parsedName = raw.substring(11);
         }
       }
+    }
+
+    // Final cleanup of the parsed name
+    parsedName = parsedName.trim();
+    if (!parsedName) {
+        parsedName = raw; // Fallback if parsing completely stripped the name
     }
 
     const id = 'item-' + Date.now();
