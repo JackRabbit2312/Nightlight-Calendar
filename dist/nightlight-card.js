@@ -790,9 +790,7 @@ class NightlightDashboard extends LitElement {
         category = category.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
       }
 
-      const docName = doc.name || "";
-      const fallbackId = docName.split('/').pop();
-      const id = fields.id?.stringValue ?? (typeof fields.id === 'string' ? fields.id : fallbackId);
+      const id = fields.id?.stringValue ?? (typeof fields.id === 'string' ? fields.id : "");
       let checked = fields.checked?.booleanValue ?? (typeof fields.checked === 'boolean' ? fields.checked : false);
       
       // Apply optimistic UI update if we just clicked it
@@ -971,7 +969,7 @@ class NightlightDashboard extends LitElement {
       category: category,
       amount: amount,
       unit: unit,
-      checked: "false"
+      checked: false
     });
     setTimeout(() => {
       this.hass.callService('homeassistant', 'update_entity', { entity_id: 'sensor.meal_planner_shopping_list' });
@@ -984,15 +982,14 @@ class NightlightDashboard extends LitElement {
     this.requestUpdate();
 
     try {
-      // Use upsert to ensure all fields are retained, but pass checked as a string 
-      // to prevent Jinja from rendering Python's 'True'/'False' which breaks JSON.
+      // Use the upsert command since we have all the data and we know it handles booleans correctly
       await this.hass.callService('rest_command', 'meal_planner_upsert_shopping_item', {
         id: item.id,
         name: item.rawName,
         category: item.department,
         amount: item.amount,
         unit: item.unit,
-        checked: !item.checked ? "true" : "false"
+        checked: !item.checked
       });
       
       setTimeout(() => {
