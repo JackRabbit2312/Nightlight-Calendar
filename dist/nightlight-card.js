@@ -765,20 +765,33 @@ class NightlightDashboard extends LitElement {
     const items = docs.map(doc => {
       const fields = doc.fields || {};
       let rawName = fields.name?.stringValue || "Unknown";
-      let department = "Other";
+      
+      // Try to find category in various possible field names
+      let category = fields.category?.stringValue || 
+                     fields.Category?.stringValue || 
+                     fields.department?.stringValue || 
+                     fields.Department?.stringValue || 
+                     "";
+                     
       let displayName = rawName;
       
+      // Fallback: Check if department is prepended in the name like "[Dairy] Milk"
       const match = rawName.match(/^\[(.*?)\]\s*(.*)$/);
       if (match) {
-        department = match[1];
+        if (!category) category = match[1];
         displayName = match[2];
       }
+
+      if (!category) category = "Other";
+
+      // Normalize category to Title Case for nice display and consistent grouping
+      category = category.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
 
       return {
         id: fields.id?.stringValue,
         rawName: rawName,
         name: displayName,
-        department: department,
+        department: category,
         amount: fields.amount?.doubleValue || fields.amount?.integerValue || 1,
         unit: fields.unit?.stringValue || "",
         checked: fields.checked?.booleanValue || false
@@ -788,6 +801,11 @@ class NightlightDashboard extends LitElement {
     // Sort: unchecked first, then department, then alphabetical
     items.sort((a, b) => {
       if (a.checked !== b.checked) return a.checked ? 1 : -1;
+      
+      // Sort "Other" to the bottom of the unchecked list
+      if (a.department === "Other" && b.department !== "Other") return 1;
+      if (b.department === "Other" && a.department !== "Other") return -1;
+      
       if (a.department !== b.department) return a.department.localeCompare(b.department);
       return a.name.localeCompare(b.name);
     });
@@ -801,6 +819,9 @@ class NightlightDashboard extends LitElement {
             this._addShoppingItem(input.value);
             input.value = '';
           }}">Add</button>
+          <button class="btn-primary" style="background: var(--nl-surface); color: var(--nl-fg); border: 1px solid var(--nl-border); padding: 14px; width: auto;" @click="${() => this._refreshShoppingList()}" title="Refresh List">
+            <ha-icon icon="mdi:refresh"></ha-icon>
+          </button>
         </div>
         <div class="shopping-list">
           ${items.map((item, index) => {
@@ -828,12 +849,17 @@ class NightlightDashboard extends LitElement {
     `;
   }
 
+  async _refreshShoppingList() {
+    await this.hass.callService('homeassistant', 'update_entity', { entity_id: 'sensor.meal_planner_shopping_list' });
+  }
+
   async _addShoppingItem(name) {
     if (!name || !name.trim()) return;
     const id = 'item-' + Date.now();
     await this.hass.callService('rest_command', 'meal_planner_upsert_shopping_item', {
       id: id,
       name: name.trim(),
+      category: "Other",
       amount: 1,
       unit: "",
       checked: false
@@ -847,12 +873,13 @@ class NightlightDashboard extends LitElement {
     await this.hass.callService('rest_command', 'meal_planner_upsert_shopping_item', {
       id: item.id,
       name: item.rawName,
+      category: item.department,
       amount: item.amount,
       unit: item.unit,
       checked: !item.checked
     });
     setTimeout(() => {
-      this.hass.callService('homeassistant', 'update_entity', { entity_id: 'sensor.meal_planner_shopping_list' });
+      this._refreshShoppingList();
     }, 1000);
   }
 
