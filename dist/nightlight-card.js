@@ -790,7 +790,9 @@ class NightlightDashboard extends LitElement {
         category = category.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
       }
 
-      const id = fields.id?.stringValue ?? (typeof fields.id === 'string' ? fields.id : "");
+      const docName = doc.name || "";
+      const fallbackId = docName.split('/').pop();
+      const id = fields.id?.stringValue ?? (typeof fields.id === 'string' ? fields.id : fallbackId);
       let checked = fields.checked?.booleanValue ?? (typeof fields.checked === 'boolean' ? fields.checked : false);
       
       // Apply optimistic UI update if we just clicked it
@@ -982,14 +984,11 @@ class NightlightDashboard extends LitElement {
     this.requestUpdate();
 
     try {
-      // Use the upsert command since we have all the data and we know it handles booleans correctly
-      await this.hass.callService('rest_command', 'meal_planner_upsert_shopping_item', {
+      // Revert to toggle command, but pass checked as a string to fix Jinja True/False rendering issues
+      await this.hass.callService('rest_command', 'meal_planner_toggle_shopping_item', {
         id: item.id,
-        name: item.rawName,
-        category: item.department,
-        amount: item.amount,
-        unit: item.unit,
-        checked: !item.checked
+        checked: !item.checked,
+        checked_str: !item.checked ? "true" : "false"
       });
       
       setTimeout(() => {
