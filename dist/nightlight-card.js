@@ -971,7 +971,7 @@ class NightlightDashboard extends LitElement {
       category: category,
       amount: amount,
       unit: unit,
-      checked: false
+      checked: "false"
     });
     setTimeout(() => {
       this.hass.callService('homeassistant', 'update_entity', { entity_id: 'sensor.meal_planner_shopping_list' });
@@ -984,11 +984,15 @@ class NightlightDashboard extends LitElement {
     this.requestUpdate();
 
     try {
-      // Revert to toggle command, but pass checked as a string to fix Jinja True/False rendering issues
-      await this.hass.callService('rest_command', 'meal_planner_toggle_shopping_item', {
+      // Use upsert to ensure all fields are retained, but pass checked as a string 
+      // to prevent Jinja from rendering Python's 'True'/'False' which breaks JSON.
+      await this.hass.callService('rest_command', 'meal_planner_upsert_shopping_item', {
         id: item.id,
-        checked: !item.checked,
-        checked_str: !item.checked ? "true" : "false"
+        name: item.rawName,
+        category: item.department,
+        amount: item.amount,
+        unit: item.unit,
+        checked: !item.checked ? "true" : "false"
       });
       
       setTimeout(() => {
