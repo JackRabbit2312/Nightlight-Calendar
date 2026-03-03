@@ -61,6 +61,7 @@ class NightlightDashboard extends LitElement {
     this._menuOpen = false;
     this._lastResetDate = localStorage.getItem('nightlight_reset_date');
     this._themeMode = 'light'; // Default
+    this._optimisticShoppingUpdates = new Map();
   }
 
   setConfig(config) {
@@ -764,19 +765,20 @@ class NightlightDashboard extends LitElement {
     
     const items = docs.map(doc => {
       const fields = doc.fields || {};
-      let rawName = fields.name?.stringValue || "Unknown";
+      let rawName = fields.name?.stringValue || fields.name || "Unknown";
       
       // Try to find category in various possible field names
       let category = fields.category?.stringValue || 
                      fields.Category?.stringValue || 
                      fields.department?.stringValue || 
                      fields.Department?.stringValue || 
+                     fields.category ||
                      "";
                      
       let displayName = rawName;
       
       // Fallback: Check if department is prepended in the name like "[Dairy] Milk"
-      const match = rawName.match(/^\[(.*?)\]\s*(.*)$/);
+      const match = (typeof rawName === 'string') ? rawName.match(/^\[(.*?)\]\s*(.*)$/) : null;
       if (match) {
         if (!category) category = match[1];
         displayName = match[2];
@@ -785,16 +787,26 @@ class NightlightDashboard extends LitElement {
       if (!category) category = "Other";
 
       // Normalize category to Title Case for nice display and consistent grouping
-      category = category.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+      if (typeof category === 'string') {
+        category = category.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+      }
+
+      const id = fields.id?.stringValue || fields.id;
+      let checked = fields.checked?.booleanValue || fields.checked === true || false;
+      
+      // Apply optimistic UI update if we just clicked it
+      if (id && this._optimisticShoppingUpdates.has(id)) {
+        checked = this._optimisticShoppingUpdates.get(id);
+      }
 
       return {
-        id: fields.id?.stringValue,
+        id: id,
         rawName: rawName,
         name: displayName,
         department: category,
-        amount: fields.amount?.doubleValue || fields.amount?.integerValue || 1,
-        unit: fields.unit?.stringValue || "",
-        checked: fields.checked?.booleanValue || false
+        amount: fields.amount?.doubleValue || fields.amount?.integerValue || fields.amount || 1,
+        unit: fields.unit?.stringValue || fields.unit || "",
+        checked: checked
       };
     });
 
@@ -870,17 +882,33 @@ class NightlightDashboard extends LitElement {
   }
 
   async _toggleShoppingItem(item) {
-    await this.hass.callService('rest_command', 'meal_planner_upsert_shopping_item', {
-      id: item.id,
-      name: item.rawName,
-      category: item.department,
-      amount: item.amount,
-      unit: item.unit,
-      checked: !item.checked
-    });
-    setTimeout(() => {
-      this._refreshShoppingList();
-    }, 1000);
+    // Optimistic UI Update - feels instant!
+    this._optimisticShoppingUpdates.set(item.id, !item.checked);
+    this.requestUpdate();
+
+    try {
+      // Use a dedicated toggle command to ONLY update the checked status
+      await this.hass.callService('rest_command', 'meal_planner_toggle_shopping_item', {
+        id: item.id,
+        checked: !item.checked ? "true" : "false"
+      });
+      
+      setTimeout(() => {
+        this._refreshShoppingList();
+      }, 1000);
+
+      // Clear optimistic state after a few seconds to rely on real data again
+      setTimeout(() => {
+        this._optimisticShoppingUpdates.delete(item.id);
+        this.requestUpdate();
+      }, 4000);
+
+    } catch (e) {
+      console.error("Failed to toggle shopping item:", e);
+      // Revert optimistic update on failure
+      this._optimisticShoppingUpdates.delete(item.id);
+      this.requestUpdate();
+    }
   }
 
   async _deleteShoppingItem(id) {
