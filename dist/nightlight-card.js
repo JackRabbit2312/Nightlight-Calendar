@@ -62,6 +62,9 @@ class NightlightDashboard extends LitElement {
     this._lastResetDate = localStorage.getItem('nightlight_reset_date');
     this._themeMode = 'light'; // Default
     this._optimisticShoppingUpdates = new Map();
+    this._cachedShoppingDocs = [];
+    this._cachedMealDocs = [];
+    this._cachedRecipeDocs = [];
   }
 
   setConfig(config) {
@@ -609,7 +612,11 @@ class NightlightDashboard extends LitElement {
 
   _renderMealPlanner() {
     const weeklyMealsSensor = this.hass.states['sensor.meal_planner_weekly_meals'];
-    const weeklyMealsDocs = weeklyMealsSensor && weeklyMealsSensor.attributes.documents ? weeklyMealsSensor.attributes.documents : [];
+    let weeklyMealsDocs = this._cachedMealDocs;
+    if (weeklyMealsSensor && weeklyMealsSensor.attributes && Array.isArray(weeklyMealsSensor.attributes.documents)) {
+        weeklyMealsDocs = weeklyMealsSensor.attributes.documents;
+        this._cachedMealDocs = weeklyMealsDocs;
+    }
     
     const mealsByDate = {};
     weeklyMealsDocs.forEach(doc => {
@@ -619,7 +626,12 @@ class NightlightDashboard extends LitElement {
     });
 
     const recipesSensor = this.hass.states['sensor.meal_planner_recipes'];
-    const recipesDocs = recipesSensor && recipesSensor.attributes.documents ? recipesSensor.attributes.documents : [];
+    let recipesDocs = this._cachedRecipeDocs;
+    if (recipesSensor && recipesSensor.attributes && Array.isArray(recipesSensor.attributes.documents)) {
+        recipesDocs = recipesSensor.attributes.documents;
+        this._cachedRecipeDocs = recipesDocs;
+    }
+    
     const recipes = recipesDocs.map(doc => {
       const fields = doc.fields || {};
       return {
@@ -761,7 +773,11 @@ class NightlightDashboard extends LitElement {
 
   _renderShoppingList() {
     const shoppingSensor = this.hass.states['sensor.meal_planner_shopping_list'];
-    const docs = shoppingSensor && shoppingSensor.attributes.documents ? shoppingSensor.attributes.documents : [];
+    let docs = this._cachedShoppingDocs;
+    if (shoppingSensor && shoppingSensor.attributes && Array.isArray(shoppingSensor.attributes.documents)) {
+        docs = shoppingSensor.attributes.documents;
+        this._cachedShoppingDocs = docs;
+    }
     
     const items = docs.map(doc => {
       const fields = doc.fields || {};
@@ -969,7 +985,7 @@ class NightlightDashboard extends LitElement {
       category: category,
       amount: amount,
       unit: unit,
-      checked: false
+      checked: "false"
     });
     setTimeout(() => {
       this.hass.callService('homeassistant', 'update_entity', { entity_id: 'sensor.meal_planner_shopping_list' });
@@ -989,7 +1005,7 @@ class NightlightDashboard extends LitElement {
         category: item.department,
         amount: item.amount,
         unit: item.unit,
-        checked: !item.checked
+        checked: !item.checked ? "true" : "false"
       });
       
       setTimeout(() => {
