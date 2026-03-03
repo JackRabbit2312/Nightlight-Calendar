@@ -841,13 +841,20 @@ class NightlightDashboard extends LitElement {
                              (item.checked !== items[index - 1].checked) || 
                              (!item.checked && item.department !== items[index - 1].department);
             
+            let displayUnit = item.unit === 'approx value' ? '' : (item.unit || '');
+            let showMeta = item.amount > 1 || displayUnit !== '';
+            let metaText = `${item.amount} ${displayUnit}`.trim();
+            if (item.amount <= 1 && displayUnit === '') {
+                showMeta = false;
+            }
+            
             return html`
               ${showDept ? html`<div class="shopping-dept-header ${item.checked ? 'checked' : ''}">${item.checked ? 'Completed' : item.department}</div>` : ''}
               <div class="shopping-item ${item.checked ? 'checked' : ''}">
                 <div class="shopping-item-left" @click="${() => this._toggleShoppingItem(item)}">
                   <ha-icon icon="${item.checked ? 'mdi:checkbox-marked-circle' : 'mdi:checkbox-blank-circle-outline'}"></ha-icon>
                   <span class="shopping-item-name">${item.name}</span>
-                  ${item.amount || item.unit ? html`<span class="shopping-item-meta">${item.amount} ${item.unit}</span>` : ''}
+                  ${showMeta ? html`<span class="shopping-item-meta">${metaText}</span>` : ''}
                 </div>
                 <button class="shopping-item-delete" @click="${() => this._deleteShoppingItem(item.id)}">
                   <ha-icon icon="mdi:delete-outline"></ha-icon>
