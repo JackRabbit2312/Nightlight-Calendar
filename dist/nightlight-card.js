@@ -867,13 +867,84 @@ class NightlightDashboard extends LitElement {
 
   async _addShoppingItem(name) {
     if (!name || !name.trim()) return;
+    
+    let raw = name.trim();
+    let amount = 1;
+    let unit = "";
+    let parsedName = raw;
+    let category = "Other";
+
+    const KNOWN_UNITS = new Set([
+      "g", "kg", "ml", "l", "cup", "cups", "tbsp", "tsp", "tablespoon", "tablespoons", "teaspoon", "teaspoons", 
+      "oz", "lb", "pinch", "dash", "handful", "clove", "cloves", "bunch", "sprig", "sprigs", "slice", "slices", 
+      "can", "tin", "packet", "head", "stalk", "stalks", "piece", "pieces", "whole", "half", "quarter", "cm", "inch",
+      "jar", "bottle", "drop", "drops", "scoop", "scoops", "sheet", "sheets", "strip", "strips", "knob"
+    ]);
+
+    // Match mixed fractions like 1 1/2
+    const mixedFractionMatch = raw.match(/^(\d+)\s+(\d+)\/(\d+)\s+([a-zA-Z]+)?\s*(.*)$/);
+    // Match fractions like 1/2, 1/4
+    const fractionMatch = raw.match(/^(\d+)\/(\d+)\s+([a-zA-Z]+)?\s*(.*)$/);
+    
+    if (mixedFractionMatch) {
+      amount = parseInt(mixedFractionMatch[1]) + (parseInt(mixedFractionMatch[2]) / parseInt(mixedFractionMatch[3]));
+      const potentialUnit = (mixedFractionMatch[4] || "").toLowerCase();
+      if (KNOWN_UNITS.has(potentialUnit)) {
+        unit = potentialUnit;
+        parsedName = mixedFractionMatch[5];
+      } else {
+        unit = "";
+        parsedName = (mixedFractionMatch[4] ? mixedFractionMatch[4] + " " : "") + mixedFractionMatch[5];
+      }
+    } else if (fractionMatch) {
+      amount = parseInt(fractionMatch[1]) / parseInt(fractionMatch[2]);
+      const potentialUnit = (fractionMatch[3] || "").toLowerCase();
+      if (KNOWN_UNITS.has(potentialUnit)) {
+        unit = potentialUnit;
+        parsedName = fractionMatch[4];
+      } else {
+        unit = "";
+        parsedName = (fractionMatch[3] ? fractionMatch[3] + " " : "") + fractionMatch[4];
+      }
+    } else {
+      // Match decimals or integers with optional units attached (like 300g) or separated (like 3 tbsp)
+      const match = raw.match(/^([\d.]+)\s*([a-zA-Z]+)?\s*(.*)$/);
+      if (match) {
+        amount = parseFloat(match[1]);
+        const potentialUnit = (match[2] || "").toLowerCase();
+        if (KNOWN_UNITS.has(potentialUnit)) {
+          unit = potentialUnit;
+          parsedName = match[3];
+        } else {
+          unit = "";
+          parsedName = (match[2] ? match[2] + " " : "") + match[3];
+        }
+      } else {
+        // Handle "Pinch of ..."
+        const pinchMatch = raw.match(/^pinch of\s+(.*)$/i);
+        if (pinchMatch) {
+          amount = 1;
+          unit = "pinch";
+          parsedName = pinchMatch[1];
+        } else if (raw.toLowerCase().startsWith("splash of ")) {
+          amount = 1;
+          unit = "splash";
+          parsedName = raw.substring(10);
+        } else if (raw.toLowerCase().startsWith("handful of ")) {
+          amount = 1;
+          unit = "handful";
+          parsedName = raw.substring(11);
+        }
+      }
+    }
+
     const id = 'item-' + Date.now();
     await this.hass.callService('rest_command', 'meal_planner_upsert_shopping_item', {
       id: id,
-      name: name.trim(),
-      category: "Other",
-      amount: 1,
-      unit: "",
+      name: parsedName.trim(),
+      category: category,
+      amount: amount,
+      unit: unit,
       checked: false
     });
     setTimeout(() => {
